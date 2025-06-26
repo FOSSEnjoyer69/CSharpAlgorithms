@@ -13,12 +13,12 @@ public class Server
 
     // Change the type to support async handlers
     private Dictionary<string, Func<HttpListenerRequest, HttpListenerResponse, Task>> m_customFunctions;
-    private Dictionary<string, string> m_FolderPaths;
+    private Dictionary<string, string> m_filePaths = new Dictionary<string, string>();
 
     public Server()
     {
         m_customFunctions = new Dictionary<string, Func<HttpListenerRequest, HttpListenerResponse, Task>>();
-        m_FolderPaths = new Dictionary<string, string>();
+        m_filePaths = new Dictionary<string, string>();
 
         m_listener = new HttpListener();
     }
@@ -61,9 +61,10 @@ public class Server
                 var handler = m_customFunctions[path];
                 await handler(request, response);
             }
-            else if (m_FolderPaths.ContainsKey(path))
+            else if (m_filePaths.ContainsKey(path))
             {
-                   
+                string text = File.ReadAllText(m_filePaths[path]);
+                await Responses.SendTextRespone(response, text);
             }
             else
             {
@@ -84,9 +85,17 @@ public class Server
         m_customFunctions[path] = handler;
     }
 
-    public void AddFolderPath(string urlPath, string folderPath)
+    public void LinkFile(string filePath, string linkPath)
     {
-        m_FolderPaths[urlPath] = folderPath;
+        if (File.Exists(filePath))
+        {
+            m_filePaths[$"/{linkPath}"] = filePath;
+            Console.WriteLine($"Linked {filePath} to {linkPath}");
+        }
+        else
+        {
+            Console.WriteLine($"File {filePath} does not exist.");
+        }
     }
 
     private async Task HandleUpload(HttpListenerRequest request, HttpListenerResponse response)

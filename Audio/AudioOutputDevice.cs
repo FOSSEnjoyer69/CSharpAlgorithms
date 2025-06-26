@@ -1,51 +1,37 @@
 using SoundIOSharp;
-using System.Diagnostics;
 
 namespace CSharpAlgorithms.Audio;
 
-public class Microphone
+public class AudioOutputDevice
 {
-    public SoundIODevice InputDevice { get; private set; }
-    public SoundIOInStream InputStream { get; private set; }
-
     public SoundIODevice OutputDevice { get; private set; }
     public SoundIOOutStream OutputStream { get; private set; }
 
-    SoundIO soundIO;
-
     Action<IntPtr, double> writeSample;
-
-    public List<double> test = new List<double>();
 
     double secondsOffset = 0;
 
-    public Microphone()
+    public bool PlayBeep { get; set; } = false;
+
+    private Action<SoundIOOutStream, int, int> callbackLock; //prevents "Process terminated. A callback was made on a garbage collected delegate of type 'VirtualSoundboard!SoundIOSharp.SoundIoOutStream+WriteCallback::Invoke'.."
+
+    public AudioOutputDevice()
     {
-        soundIO = new SoundIO();
-        soundIO.Connect();
-        soundIO.FlushEvents();
+        AudioUtils.Initialize();
 
-        writeSample = WriteSampleS32NE;
-
-
-        InputDevice = soundIO.GetDefaultInputDevice();
-        InputStream = new SoundIOInStream(InputDevice);
-
-        OutputDevice = soundIO.GetDefaultOutputDevice();
+        OutputDevice = AudioUtils.SoundIO.GetDefaultOutputDevice();
         OutputStream = new SoundIOOutStream(OutputDevice);
+        OutputStream.SoftwareLatency = 0.05;
+
+        // Set the format and other properties as needed
         OutputStream.Format = SoundIoFormat.Float32LE;
-        OutputStream.OnWriteCallback = WriteCallback;
+        OutputStream.Format = SoundIoFormat.Float32LE;
+        OutputStream.OnWriteCallback = callbackLock = WriteCallback;
+
+        writeSample = AudioUtils.WriteSampleS32NE;
 
         OutputStream.Open();
         OutputStream.Start();
-    }
-
-    static unsafe void WriteSampleS32NE(IntPtr ptr, double sample)
-    {
-        int* buffer = (int*)ptr;
-        double range = (double)int.MaxValue - (double)int.MinValue;
-        double val = sample * range / 2.0;
-        *buffer = (int)val;
     }
 
     private void WriteCallback(SoundIOOutStream stream, int frameCountMin, int frameCountMax)
@@ -76,7 +62,10 @@ public class Microphone
 
             for (int frame = 0; frame < frameCount; frame++)
             {
-                double sample = Math.Clamp(Math.Sin((secondsOffset + frame * secondsPerFrame) * radiansPerSecond) * 0.5, 0, 1);
+                double sample = 0;
+
+                if (PlayBeep)
+                    sample += Math.Clamp(Math.Sin((secondsOffset + frame * secondsPerFrame) * radiansPerSecond) * 0.5, 0, 1);
 
                 for (int channel = 0; channel < channelLayout.ChannelCount; channel++)
                 {
@@ -86,7 +75,6 @@ public class Microphone
             }
 
             secondsOffset = (secondsOffset + secondsPerFrame * frameCount) % 1;
-            test.Add(secondsOffset);
 
             error = stream.EndWrite();
             if (error != SoundIoError.None)
