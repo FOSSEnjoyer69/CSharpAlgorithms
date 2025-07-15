@@ -1,16 +1,11 @@
-using SoundIOSharp;
+using System.Collections.Concurrent;
+using MP3Sharp;
+using PortAudioSharp;
 
 namespace CSharpAlgorithms.Audio;
 
 public class VirtualSoundboard
 {
-    public AudioInputDevice InputDevice;
-    public AudioOutputDevice OutputDevice;
-
-    public VirtualSoundboard()
-    {
-        //InputDevice = new AudioInputDevice(); //Causes a crash on startup, not sure why
-        OutputDevice = new AudioOutputDevice();
-    }
     
+
 }

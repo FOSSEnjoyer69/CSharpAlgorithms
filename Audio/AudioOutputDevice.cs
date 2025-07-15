@@ -1,88 +1,140 @@
-using SoundIOSharp;
+using PortAudioSharp;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using AudioStream = PortAudioSharp.Stream;
 
 namespace CSharpAlgorithms.Audio;
 
-public class AudioOutputDevice
+public class AudioOutputDevice : IDisposable
 {
-    public SoundIODevice OutputDevice { get; private set; }
-    public SoundIOOutStream OutputStream { get; private set; }
+    public int DeviceIndex { get; private set; }
 
-    Action<IntPtr, double> writeSample;
+    public DeviceInfo Info { get; private set; }
+    public BlockingCollection<float[]> AudioBuffer { get; set; }
 
-    double secondsOffset = 0;
+    private float[]? lastSamples = null;
+    private int lastIndex = 0;
 
-    public bool PlayBeep { get; set; } = false;
+    private AudioStream stream;
+    private int sampleRate;
 
-    private Action<SoundIOOutStream, int, int> callbackLock; //prevents "Process terminated. A callback was made on a garbage collected delegate of type 'VirtualSoundboard!SoundIOSharp.SoundIoOutStream+WriteCallback::Invoke'.."
-
-    public AudioOutputDevice()
+    public AudioOutputDevice(BlockingCollection<float[]>? audioBuffer = null)
     {
-        AudioUtils.Initialize();
+        PortAudio.Initialize();
 
-        OutputDevice = AudioUtils.SoundIO.GetDefaultOutputDevice();
-        OutputStream = new SoundIOOutStream(OutputDevice);
-        OutputStream.SoftwareLatency = 0.05;
-
-        // Set the format and other properties as needed
-        OutputStream.Format = SoundIoFormat.Float32LE;
-        OutputStream.Format = SoundIoFormat.Float32LE;
-        OutputStream.OnWriteCallback = callbackLock = WriteCallback;
-
-        writeSample = AudioUtils.WriteSampleS32NE;
-
-        OutputStream.Open();
-        OutputStream.Start();
+        SetBuffer(audioBuffer);
+        SetOutput(PortAudio.DefaultOutputDevice);
     }
 
-    private void WriteCallback(SoundIOOutStream stream, int frameCountMin, int frameCountMax)
+    public void SetBuffer(BlockingCollection<float[]>? audioBuffer = null)
     {
-        double floatSampleRate = stream.SampleRate;
-        double secondsPerFrame = 1.0 / floatSampleRate;
+        audioBuffer ??= [];
+        AudioBuffer = audioBuffer;
+    }
 
-        int framesLeft = frameCountMax;
+    public void SetOutput(int deviceIndex)
+    {
+        if (deviceIndex == PortAudio.NoDevice)
+            throw new InvalidOperationException($"No audio output device found at {deviceIndex}.");
 
-        SoundIOChannelAreas areas;
-        SoundIoError error;
-
-        while (true)
+        try
         {
-            int frameCount = framesLeft;
+            AudioStream previousStream = stream;
 
-            error = stream.BeginWrite(out areas, ref frameCount);
-            if (error != SoundIoError.None)
-                throw new Exception($"Unrecoverable stream error {error.GetErrorMessage()}");
+            DeviceInfo deviceInfo = PortAudio.GetDeviceInfo(deviceIndex);
+            
 
-            if (areas == null || frameCount == 0)
-                break;
+            sampleRate = (int)deviceInfo.defaultSampleRate;
 
-            SoundIOChannelLayout channelLayout = stream.Layout;
-
-            double pitch = 1000;
-            double radiansPerSecond = pitch * 2 * Math.PI;
-
-            for (int frame = 0; frame < frameCount; frame++)
+            StreamParameters streamParameters = new StreamParameters
             {
-                double sample = 0;
+                device = deviceIndex,
+                channelCount = 2,
+                sampleFormat = SampleFormat.Float32,
+                suggestedLatency = deviceInfo.defaultLowOutputLatency,
+                hostApiSpecificStreamInfo = IntPtr.Zero
+            };
 
-                if (PlayBeep)
-                    sample += Math.Clamp(Math.Sin((secondsOffset + frame * secondsPerFrame) * radiansPerSecond) * 0.5, 0, 1);
+            stream = new AudioStream(
+                inParams: null,
+                outParams: streamParameters,
+                sampleRate: sampleRate,
+                framesPerBuffer: 0,
+                streamFlags: StreamFlags.ClipOff,
+                callback: Callback,
+                userData: IntPtr.Zero
+            );
 
-                for (int channel = 0; channel < channelLayout.ChannelCount; channel++)
-                {
-                    writeSample(areas[channel].Pointer, sample);
-                    areas[channel].AdvancePointer();
-                }
+            stream.Start();
+
+            if (previousStream is not null)
+            {
+                previousStream.Stop();
+                previousStream.Dispose();
+                lastSamples = null;
+                lastIndex = 0;
             }
 
-            secondsOffset = (secondsOffset + secondsPerFrame * frameCount) % 1;
-
-            error = stream.EndWrite();
-            if (error != SoundIoError.None)
-                throw new Exception($"EndWrite() failed with error {error.GetErrorMessage()}");
-
-            framesLeft -= frameCount;
-            if (framesLeft <= 0)
-                break;
+            DeviceIndex = deviceIndex;
+            Info = deviceInfo;
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to set AudioOutputDevice output, {ex.Message}");
+            throw;
+        }
+    }
+
+    private StreamCallbackResult Callback(IntPtr input, IntPtr output, uint frameCount,
+        ref StreamCallbackTimeInfo timeInfo, StreamCallbackFlags statusFlags, IntPtr userData)
+    {
+        int channelCount = 2;
+        int expectedSamples = (int)(frameCount * channelCount);
+        float[] buffer = new float[expectedSamples];
+        int written = 0;
+    
+        while (written < expectedSamples && (lastSamples != null || AudioBuffer.Count > 0))
+        {
+            if (lastSamples == null && AudioBuffer.TryTake(out var next))
+            {
+                lastSamples = next;
+                lastIndex = 0;
+            }
+    
+            if (lastSamples == null) break;
+    
+            int remaining = lastSamples.Length - lastIndex;
+            int toWrite = Math.Min(remaining, expectedSamples - written);
+    
+            Array.Copy(lastSamples, lastIndex, buffer, written, toWrite);
+            written += toWrite;
+            lastIndex += toWrite;
+    
+            if (lastIndex >= lastSamples.Length)
+            {
+                lastSamples = null;
+                lastIndex = 0;
+            }
+        }
+    
+        // Fill remaining with silence
+        if (written < expectedSamples)
+        {
+            Array.Clear(buffer, written, expectedSamples - written);
+        }
+    
+        Marshal.Copy(buffer, 0, output, expectedSamples);
+    
+        if (AudioBuffer.IsCompleted && lastSamples == null && lastIndex == 0)
+        {
+            return StreamCallbackResult.Complete;
+        }
+    
+        return StreamCallbackResult.Continue;
+    }
+    public void Dispose()
+    {
+        stream?.Dispose();
+        PortAudio.Terminate();
     }
 }

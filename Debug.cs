@@ -2,7 +2,7 @@ namespace CSharpAlgorithms;
 
 public static class Debug
 {
-    public static void LogDictionary<TKey, TValue>(Dictionary<TKey, TValue> dictionary)
+    public static void LogDictionary<TKey, TValue>(Dictionary<TKey, TValue> dictionary) where TKey : notnull
     {
         foreach (var kvp in dictionary)
         {

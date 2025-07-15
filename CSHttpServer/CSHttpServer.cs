@@ -23,10 +23,11 @@ public class Server
         m_listener = new HttpListener();
     }
 
-    public async Task Start(bool open=true)
+    public async Task Start(int port = -1, bool open=true)
     {
         string localIP = GetLocalIPAddress();
-        int port = GetAvailablePort();
+        if (port == -1)
+            port = GetAvailablePort();
 
         string prefix = $"http://{localIP}:{port}/";
         m_listener.Prefixes.Add(prefix);
