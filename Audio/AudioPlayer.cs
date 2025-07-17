@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using System.Collections.Concurrent;
 
 namespace CSharpAlgorithms.Audio;
@@ -5,49 +7,53 @@ namespace CSharpAlgorithms.Audio;
 public class AudioPlayer : IAudioBuffer, IAudioProvider
 {
     public AudioClip clip;
+    public bool loop = false;
+
     private Thread playThread;
+
+
 
     private double latencySeconds;
     private int framesPerBuffer;
-    private float[] samples;
     private int position = 0;
     private double blockDurationSeconds;
 
     public BlockingCollection<float[]> AudioBuffer { get; set; }
 
-    public bool IsFinished => !(position < samples.Length);
+    public bool IsFinished => !(position < clip.Samples.Length);
     public bool IsPlaying { get; private set; } = false;
     public bool HasStarted { get; private set; } = false;
 
     private readonly ManualResetEventSlim pauseEvent = new(true); // starts unpaused
     private readonly object lockObj = new();
 
-    public AudioPlayer(AudioClip clip, AudioMixer mixer)
-    {
-        AudioBuffer = mixer.AudioBuffer ?? throw new Exception("Output device must provide a buffer");
+    private readonly Mode mode;
 
-        this.clip = clip;
-        latencySeconds = mixer.OutputDevice.Info.defaultLowOutputLatency;
-        framesPerBuffer = (int)(clip.SampleRate * latencySeconds);
-        samples = clip.Samples;
-        blockDurationSeconds = (double)framesPerBuffer / clip.SampleRate;
+    public enum Mode
+    {
+        WithOutputDevice,
+        WithAudioMixer
     }
 
     public AudioPlayer(AudioClip clip, AudioOutputDevice outputDevice)
     {
         AudioBuffer = outputDevice.AudioBuffer ?? throw new Exception("Output device must provide a buffer");
 
-        Console.WriteLine($"Clip Sample Rate: {clip.SampleRate}");
-        Console.WriteLine($"Playback Sample Rate: {outputDevice.Info.defaultSampleRate}");
-
-        framesPerBuffer = (int)(clip.SampleRate * latencySeconds);
-
         this.clip = clip;
         latencySeconds = outputDevice.Info.defaultLowOutputLatency;
         framesPerBuffer = (int)(clip.SampleRate * latencySeconds);
-        samples = clip.Samples;
         blockDurationSeconds = (double)framesPerBuffer / clip.SampleRate;
 
+        mode = Mode.WithOutputDevice;
+    }
+
+    public AudioPlayer(AudioClip clip, AudioMixer audioMixer)
+    {
+        this.clip = clip;
+
+        audioMixer.sources.Add(this);
+
+        mode = Mode.WithAudioMixer;
     }
 
     public void Play()
@@ -59,10 +65,18 @@ public class AudioPlayer : IAudioBuffer, IAudioProvider
         }
 
         if (IsPlaying)
-                return;
+            return;
+
+        Console.WriteLine($"Playing {clip.Name}");
 
         IsPlaying = true;
         HasStarted = true;
+
+        if (mode == Mode.WithAudioMixer)
+        {
+            // No need to start a thread for AudioMixer, it will be handled by the mixer
+            return;
+        }
 
         playThread = new Thread(PlaybackLoop)
         {
@@ -106,10 +120,10 @@ public class AudioPlayer : IAudioBuffer, IAudioProvider
 
                 lock (lockObj)
                 {
-                    if (!IsPlaying || position >= samples.Length)
+                    if (!IsPlaying || position >= clip.Samples.Length)
                         break;
 
-                    block = GetSamples(framesPerBuffer);
+                    block = GetSamples(framesPerBuffer, clip.ChannelCount);
                     AudioBuffer.Add(block);
                 }
 
@@ -122,18 +136,51 @@ public class AudioPlayer : IAudioBuffer, IAudioProvider
             throw;
         }
     }
-
-    public float[] GetSamples(int frameCount)
+    public float[] GetSamples(int frameCount, int channelCount)
     {
-        int remaining = samples.Length - position;
-        if (remaining <= 0) return Array.Empty<float>();
+        if (!IsPlaying)
+            return [];
 
-        int blockSize = Math.Min(frameCount * clip.ChannelCount, remaining);
+        int clipChannels = clip.ChannelCount;
+        int remaining = clip.Samples.Length - position;
+        int samplesNeeded = frameCount * clipChannels;
 
-        float[] block = new float[blockSize];
-        Array.Copy(samples, position, block, 0, blockSize);
+        if (remaining <= 0)
+        {
+            position = 0;
+            if (!loop)
+                IsPlaying = false;
+
+            return [];
+        }
+
+        int blockSize = Math.Min(samplesNeeded, remaining);
+        float[] sourceBlock = new float[blockSize];
+        Array.Copy(clip.Samples, position, sourceBlock, 0, blockSize);
         position += blockSize;
 
-        return block;
+        // Upmix if needed
+        if (clipChannels == channelCount)
+        {
+            return sourceBlock;
+        }
+        else if (clipChannels == 1 && channelCount == 2)
+        {
+            int frames = blockSize;
+            float[] stereo = new float[frames * 2];
+
+            for (int i = 0; i < frames; i++)
+            {
+                float monoSample = sourceBlock[i];
+                stereo[i * 2] = monoSample;     // Left
+                stereo[i * 2 + 1] = monoSample; // Right
+            }
+
+            return stereo;
+        }
+        else
+        {
+            throw new NotSupportedException("Unsupported channel conversion.");
+        }
     }
 }

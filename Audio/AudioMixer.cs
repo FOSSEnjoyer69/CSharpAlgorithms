@@ -1,71 +1,42 @@
-using System.Collections.Concurrent;
-
 namespace CSharpAlgorithms.Audio;
 
-public class AudioMixer : IAudioBuffer
+public class AudioMixer : IAudioProvider
 {
-    public BlockingCollection<float[]> AudioBuffer { get; set; } = [];
+    public List<AudioPlayer> sources = [];
 
-    public AudioOutputDevice OutputDevice { get; protected set; }
+    public AudioOutputDevice OutputDevice { get; set; }
 
-    public List<AudioPlayer> audioPlayers;
-
-    public bool IsRunning { get; private set; }
-
-    private Thread mixThread;
-    private readonly object lockObj = new();
-
-    private readonly int framesPerBuffer = 512;
-
-    private const int CHANNEL_COUNT = 2;
-
-
-    public AudioMixer()
+    public AudioMixer(AudioOutputDevice outputDevice)
     {
-        OutputDevice = new AudioOutputDevice(AudioBuffer);
-        audioPlayers = new List<AudioPlayer>();
-
-        framesPerBuffer = (int)(OutputDevice.Info.defaultSampleRate * OutputDevice.Info.defaultLowOutputLatency);
+        OutputDevice = outputDevice;
+        OutputDevice.SetAudioProvider(this);
     }
 
-    public void Start()
+    public float[] GetSamples(int frameCount, int channelCount)
     {
-        if (IsRunning) return;
-        IsRunning = true;
+        int sampleCount = frameCount * channelCount;
+        float[] mixedSamples = new float[sampleCount];
 
-        mixThread = new Thread(MixLoop)
+        for (int sourceIndex = 0; sourceIndex < sources.Count; sourceIndex++)
         {
-            IsBackground = true
-        };
-        mixThread.Start();
-    }
+            float[] sourceSamples = sources[sourceIndex].GetSamples(frameCount, channelCount);
 
-    private void MixLoop()
-    {
-        while (IsRunning)
-        {
-            float[] mixBuffer = new float[framesPerBuffer * CHANNEL_COUNT];
-            lock (lockObj)
+            // Safety: some sources may return fewer samples
+            int availableSamples = Math.Min(sampleCount, sourceSamples.Length);
+
+            for (int i = 0; i < availableSamples; i++)
             {
-                foreach (AudioPlayer player in audioPlayers)
-                {
-                    if (!player.IsFinished)
-                    {
-                        float[] samples = player.GetSamples(framesPerBuffer);
-                        for (int i = 0; i < Math.Min(mixBuffer.Length, samples.Length); i++)
-                        {
-                            mixBuffer[i] += samples[i];
-                        }
-                    }
-
-                }
+                mixedSamples[i] += sourceSamples[i];
             }
-
-            for (int i = 0; i < mixBuffer.Length; i++)
-                mixBuffer[i] = Math.Clamp(mixBuffer[i], -1f, 1f);
-
-            AudioBuffer.Add(mixBuffer);
         }
+
+        // Optional: Clamp to avoid clipping
+        for (int i = 0; i < mixedSamples.Length; i++)
+        {
+            mixedSamples[i] = Math.Clamp(mixedSamples[i], -1f, 1f);
+        }
+
+        return mixedSamples;
     }
 
 }

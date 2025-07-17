@@ -1,6 +1,5 @@
 namespace CSharpAlgorithms.Audio;
 public interface IAudioProvider
 {
-    bool IsFinished { get; }
-    float[] GetSamples(int frameCount);
+    float[] GetSamples(int frameCount, int channelCount);
 }
