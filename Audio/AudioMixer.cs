@@ -2,7 +2,7 @@ namespace CSharpAlgorithms.Audio;
 
 public class AudioMixer : IAudioProvider
 {
-    public List<AudioPlayer> sources = [];
+    public List<IAudioProvider> sources = [];
 
     public AudioOutputDevice OutputDevice { get; set; }
 
