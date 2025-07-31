@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Text;
 
 namespace CSharpAlgorithms;
@@ -25,9 +23,9 @@ public class Server
 
     public async Task Start(int port = -1, bool open=true)
     {
-        string localIP = GetLocalIPAddress();
+        string localIP = NetworkUtils.GetLocalIPAddress();
         if (port == -1)
-            port = GetAvailablePort();
+            port = NetworkUtils.GetAvailablePort();
 
         string prefix = $"http://{localIP}:{port}/";
         m_listener.Prefixes.Add(prefix);
@@ -69,7 +67,7 @@ public class Server
             }
             else
             {
-                await HandleNotFound(request, response);
+                await Responses.HandleNotFound(request, response);
             }
         }
     }
@@ -80,7 +78,6 @@ public class Server
         m_indexPage = file;
     }
 
-    // Update to accept async handler
     public void AddCustomPath(string path, Func<HttpListenerRequest, HttpListenerResponse, Task> handler)
     {
         m_customFunctions[path] = handler;
@@ -99,36 +96,6 @@ public class Server
         }
     }
 
-    private async Task HandleUpload(HttpListenerRequest request, HttpListenerResponse response)
-    {
-        // Check if the request method is POST
-        if (request.HttpMethod == "POST")
-        {
-            // Read the form data from the request
-            using (StreamReader reader = new StreamReader(request.InputStream, request.ContentEncoding))
-            {
-                string formData = await reader.ReadToEndAsync();
-                Console.WriteLine("Received Form Data: " + formData);
-
-                // Parse the form data (simple parsing for application/x-www-form-urlencoded)
-                string[] formDataParts = formData.Split('&');
-                foreach (var part in formDataParts)
-                {
-                    string[] keyValue = part.Split('=');
-                    string key = WebUtility.UrlDecode(keyValue[0]);
-                    string value = WebUtility.UrlDecode(keyValue[1]);
-                    Console.WriteLine($"{key}: {value}");
-                }
-
-                // Send a response back to the client
-                byte[] buffer = Encoding.UTF8.GetBytes("Form data received successfully");
-                response.ContentLength64 = buffer.Length;
-                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-                response.OutputStream.Close();
-            }
-        }
-    }
-
     private async Task HandleRoot(HttpListenerRequest request, HttpListenerResponse response)
     {
         string responseString = m_indexPage?.Content ?? "Welcome to the server!";
@@ -137,46 +104,5 @@ public class Server
         response.ContentLength64 = buffer.Length;
         await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
         response.OutputStream.Close();
-    }
-
-    private async Task HandleNotFound(HttpListenerRequest request, HttpListenerResponse response)
-    {
-        response.StatusCode = (int)HttpStatusCode.NotFound;
-        string responseString = "404 - Not Found";
-        byte[] buffer = Encoding.UTF8.GetBytes(responseString);
-
-        response.ContentLength64 = buffer.Length;
-        await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-        response.OutputStream.Close();
-    }
-
-
-    static string GetLocalIPAddress()
-    {
-        foreach (NetworkInterface networkInterface in NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (networkInterface.OperationalStatus == OperationalStatus.Up)
-            {
-                foreach (UnicastIPAddressInformation ip in networkInterface.GetIPProperties().UnicastAddresses)
-                {
-                    if (ip.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(ip.Address))
-                    {
-                        return ip.Address.ToString();
-                    }
-                }
-            }
-        }
-
-        throw new Exception("No network adapters with an IPv4 address in the system!");
-    }
-
-    private static int GetAvailablePort()
-    {
-        // Bind to an available port by using TcpListener with port 0
-        TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 }

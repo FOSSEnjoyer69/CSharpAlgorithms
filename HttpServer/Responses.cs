@@ -23,4 +23,15 @@ public static class Responses
         await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
         response.OutputStream.Close();
     }
+
+    public static async Task HandleNotFound(HttpListenerRequest request, HttpListenerResponse response)
+    {
+        response.StatusCode = (int)HttpStatusCode.NotFound;
+        string responseString = "404 - Not Found";
+        byte[] buffer = Encoding.UTF8.GetBytes(responseString);
+
+        response.ContentLength64 = buffer.Length;
+        await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+        response.OutputStream.Close();
+    }
 }
