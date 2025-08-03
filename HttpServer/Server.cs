@@ -105,4 +105,58 @@ public class Server
         await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
         response.OutputStream.Close();
     }
+<<<<<<< HEAD:HttpServer/Server.cs
+=======
+
+    private async Task HandleNotFound(HttpListenerRequest request, HttpListenerResponse response)
+    {
+        response.StatusCode = (int)HttpStatusCode.NotFound;
+        string responseString = "404 - Not Found";
+        byte[] buffer = Encoding.UTF8.GetBytes(responseString);
+
+        response.ContentLength64 = buffer.Length;
+        await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+        response.OutputStream.Close();
+    }
+
+
+    static string GetLocalIPAddress()
+    {
+        foreach (NetworkInterface networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (networkInterface.OperationalStatus == OperationalStatus.Up)
+            {
+                foreach (UnicastIPAddressInformation ip in networkInterface.GetIPProperties().UnicastAddresses)
+                {
+                    if (ip.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(ip.Address))
+                    {
+                        return ip.Address.ToString();
+                    }
+                }
+            }
+        }
+
+        throw new Exception("No network adapters with an IPv4 address in the system!");
+    }
+
+    private static int GetAvailablePort(int startPort = 1024, int endPort = 65535)
+    {
+        for (int port = startPort; port <= endPort; port++)
+        {
+            try
+            {
+                TcpListener listener = new TcpListener(IPAddress.Loopback, port);
+                listener.Start();
+                listener.Stop();
+                return port; // Found available port
+            }
+            catch (SocketException)
+            {
+                // Port is in use, try next
+            }
+        }
+    
+        throw new Exception("No available ports found in the specified range.");
+    }
+>>>>>>> ae7e8d6 (added nrl scraping + cached games from 2023 to 2025 round 20):CSHttpServer/CSHttpServer.cs
 }

@@ -10,6 +10,14 @@ public static class Debug
         }
     }
 
+    public static void PrintArray<T>(T[] array)
+    {
+        foreach (var item in array)
+        {
+            Console.WriteLine(item);
+        }
+    }
+
     public static void PrintObject<T>(T obj)
     {
         var properties = typeof(T).GetProperties();

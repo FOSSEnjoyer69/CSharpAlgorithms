@@ -20,7 +20,7 @@ public class AudioOutputDevice : IDisposable
 
     private IAudioProvider audioProvider;
 
-    public AudioOutputDevice(BlockingCollection<float[]>? audioBuffer = null)
+    public AudioOutputDevice(BlockingCollection<float[]> audioBuffer = null)
     {
         PortAudio.Initialize();
 
