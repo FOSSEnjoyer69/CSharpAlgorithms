@@ -1,3 +1,5 @@
+#pragma warning disable
+
 using System.Diagnostics;
 
 namespace CSharpAlgorithms.Audio;

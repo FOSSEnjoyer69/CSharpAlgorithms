@@ -1,3 +1,5 @@
+#pragma warning disable
+
 using System.Collections.Concurrent;
 using CSharpAlgorithms.Time;
 using HtmlAgilityPack;
@@ -338,71 +340,110 @@ public static class NRLScraper
         return [.. matchOverviews];
     }
 
-    public static async Task<Game[]> GetCompletedGames(GetMatchOverviewsParams searchParams, bool savePerDownload=true, bool loadFromCache=true)
+public static async Task<Game[]> GetCompletedGames(GetMatchOverviewsParams searchParams, bool savePerDownload = true, bool loadFromCache = true)
+{
+    var gamesBag = new ConcurrentBag<Game>();
+
+    // Create all year/round combinations
+    var yearRoundPairs =
+        from year in Enumerable.Range(searchParams.YearStart, searchParams.YearEnd - searchParams.YearStart + 1)
+        from round in Enumerable.Range(searchParams.RoundStart, searchParams.RoundEnd - searchParams.RoundStart + 1)
+        select (year, round);
+
+    // Optional: limit concurrency so you don't overload the server
+    var throttler = new SemaphoreSlim(5); // Adjust max concurrency here
+
+    var tasks = yearRoundPairs.Select(async pair =>
     {
-        List<Game> games = new();
-
-        for (int year = searchParams.YearStart; year <= searchParams.YearEnd; year++)
+        await throttler.WaitAsync();
+        try
         {
-            for (int round = searchParams.RoundStart; round <= searchParams.RoundEnd; round++)
+            int year = pair.year;
+            int round = pair.round;
+
+            string pageUrl = $"https://www.nrl.com/draw/?competition=111&round={round}&season={year}";
+            HtmlDocument page = await Internet.GetPageWithHeadlessBrowser(pageUrl);
+
+            HtmlNode matchesParentNode = page.DocumentNode.SelectSingleNode("//div[@id='draw-content']");
+            if (matchesParentNode == null)
+                return;
+
+            HtmlNodeCollection matchNodes = matchesParentNode.ChildNodes;
+
+            foreach (HtmlNode matchNode in matchNodes)
             {
-                string pageUrl = $"https://www.nrl.com/draw/?competition=111&round={round}&season={year}";
-                HtmlDocument page = await Internet.GetPageWithHeadlessBrowser(pageUrl);
+                if (matchNode.XPath.Contains("#comment") || matchNode.XPath.Contains("#text"))
+                    continue;
 
-                HtmlNode matchesParentNode = page.DocumentNode.SelectSingleNode("//div[@id='draw-content']");
-                HtmlNodeCollection matchNodes = matchesParentNode.ChildNodes;
+                string matchNodeXPath = matchNode.XPath;
 
-                foreach (HtmlNode matchNode in matchNodes)
+                HtmlNode fulltimeNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a/div/div/div/div[1]/span/span");
+                if (fulltimeNode is null || fulltimeNode.InnerText.Trim() != "Full Time")
+                    continue;
+
+                HtmlNode homeTeamNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a/div/div/div/div[2]/div[1]/div/p[2]");
+                if (homeTeamNode is null)
+                    continue;
+
+                string homeTeamName = homeTeamNode.InnerText.Trim();
+                HtmlNode awayTeamNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a/div/div/div/div[3]/div[1]/div/p[2]");
+                string awayTeamName = awayTeamNode.InnerText.Trim();
+
+                if (!string.IsNullOrEmpty(searchParams.Team) &&
+                    !homeTeamName.Contains(searchParams.Team, StringComparison.OrdinalIgnoreCase) &&
+                    !awayTeamName.Contains(searchParams.Team, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (matchNode.XPath.Contains("#comment") || matchNode.XPath.Contains("#text"))
-                        continue; // Skip usless nodes
+                    continue;
+                }
 
-                    string matchNodeXPath = matchNode.XPath;
+                Game game;
+                if (loadFromCache && NRLUtils.TryLoadFromCache(year, round, homeTeamName, awayTeamName, out Game cachedGame))
+                {
+                    Console.WriteLine("Loading game from cache");
+                    game = cachedGame;
+                }
+                else
+                {
+                    HtmlNode linkNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a");
+                    string matchDataHref = linkNode.GetAttributeValue("href", string.Empty);
+                    string matchDataUrl = $"https://www.nrl.com{matchDataHref}";
 
-                    HtmlNode fulltimeNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a/div/div/div/div[1]/span/span");
-                    if (fulltimeNode is null || fulltimeNode.InnerText.Trim() != "Full Time")
-                        continue; // Skip if the match is not completed
+                    game = await Game.DownloadGame(matchDataUrl);
+                    if (savePerDownload)
+                        Game.SaveGame(game);
+                }
 
+                gamesBag.Add(game);
+            }
+        }
+        finally
+        {
+            throttler.Release();
+        }
+    });
 
-                    HtmlNode homeTeamNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a/div/div/div/div[2]/div[1]/div/p[2]");
-                    if (homeTeamNode is null)
-                        continue; // Skip if home team node is not found, as this probally means this is a bye
+    await Task.WhenAll(tasks);
 
-                    string homeTeamName = homeTeamNode.InnerText.Trim();
+    return gamesBag.ToArray();
+}
 
-                    HtmlNode awayTeamNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a/div/div/div/div[3]/div[1]/div/p[2]");
-                    string awayTeamName = awayTeamNode.InnerText.Trim();
+    public static Game[] GetCachedCompletedGames()
+    {
+        List<Game> games = [];
 
-                    if (!string.IsNullOrEmpty(searchParams.Team) &&
-                        !homeTeamName.Contains(searchParams.Team, StringComparison.OrdinalIgnoreCase) &&
-                        !awayTeamName.Contains(searchParams.Team, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue; // Skip if the team does not match the search params
-                    }
-
-                    Game game;
-
-                    if (loadFromCache && NRLUtils.TryLoadFromCache(year, round, homeTeamName, awayTeamName, out Game cachedGame))
-                    {
-                        Console.WriteLine("Loading game from cache");
-                        game = cachedGame;
-                    }
-                    else
-                    {
-                        HtmlNode linkNode = page.DocumentNode.SelectSingleNode($"{matchNodeXPath}/ul/li/div/div[1]/a");
-                        string matchDataHref = linkNode.GetAttributeValue("href", string.Empty);
-                        string matchDataUrl = $"https://www.nrl.com{matchDataHref}";
-
-                        game = await Game.DownloadGame(matchDataUrl);
-                        if (savePerDownload)
-                            Game.SaveGame(game);
-                    }
-
-                    games.Add(game);
+        DirectoryInfo cacheFolder = new DirectoryInfo("CSharpAlgorithms/Data/NRL/Games");
+        foreach (var yearFolder in cacheFolder.GetDirectories())
+        {
+            foreach (var roundFolder in yearFolder.GetDirectories())
+            {
+                FileInfo[] files = roundFolder.GetFiles();
+                foreach (var gameFile in files)
+                {
+                    games.Add(Game.LoadGame(gameFile.FullName));
                 }
             }
         }
-
+        
         return [.. games];
     }
 
@@ -425,7 +466,7 @@ public static class NRLScraper
 
     public static string GetWeather(HtmlDocument page)
     {
-        HtmlNode? conditionNode =  page.DocumentNode
+        HtmlNode? conditionNode = page.DocumentNode
             .SelectNodes("//p[@class='match-weather__text']")
             ?.FirstOrDefault(p => p.InnerText.Trim().StartsWith("Weather:", System.StringComparison.OrdinalIgnoreCase));
 
@@ -439,16 +480,40 @@ public static class NRLScraper
 
         return childNode.InnerText;
     }
+
+    public static MatchOfficial[] GetMatchOfficials(HtmlDocument page)
+    {
+        HtmlNode officialsNode = page.DocumentNode.SelectSingleNode("/html/body/div[3]/main/div[2]/div[2]/div/div[2]/div[5]/section/div/div[2]/div[2]");
+        List<MatchOfficial> officials = [];
+
+        foreach (HtmlNode node in officialsNode.ChildNodes)
+        {
+            if (node.XPath.Contains("#text"))
+                continue;
+
+            string name = node.SelectSingleNode(".//div/h3").InnerText;
+            string position = node.SelectSingleNode(".//div/p").InnerText;
+
+            MatchOfficial official = new MatchOfficial
+            {
+                Name = name,
+                Position = position,
+            };
+            
+            officials.Add(official);
+        }
+
+        return [.. officials];
+    }
 }
 
 public struct GetMatchOverviewsParams
 {
-    public GetMatchOverviewsParams(){}
+    public GetMatchOverviewsParams() { }
 
     public int YearStart { get; set; } = -1;
     public int YearEnd { get; set; } = -1;
     public int RoundStart { get; set; } = -1;
     public int RoundEnd { get; set; } = -1;
     public string Team { get; set; } = string.Empty;
-    public string Stadium { get; set; } = string.Empty;
 }

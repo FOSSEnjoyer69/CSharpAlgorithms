@@ -20,7 +20,33 @@ public static class Internet
             DefaultViewport = new ViewPortOptions { Width = 1280, Height = 800 }
         });
 
+        
+        // Ensure browser closes on program exit or Ctrl+C
+        AppDomain.CurrentDomain.ProcessExit += async (sender, e) => await CloseBrowser();
+        Console.CancelKeyPress += async (sender, e) =>
+        {
+            await CloseBrowser();
+            e.Cancel = false; // allow the program to exit
+        };
+
         isInitialized = true;
+    }
+
+    private static async Task CloseBrowser()
+    {
+        if (browser != null)
+        {
+            try
+            {
+                await browser.CloseAsync();
+                browser = null;
+                Console.WriteLine("Browser closed.");
+            }
+            catch
+            {
+                // ignore errors during shutdown
+            }
+        }
     }
 
     /// <summary>
@@ -54,6 +80,7 @@ public static class Internet
             WaitUntil = [WaitUntilNavigation.Networkidle2]
         });
         string content = await page.GetContentAsync();
+        await page.CloseAsync();
 
         HtmlDocument document = new HtmlDocument();
         document.LoadHtml(content);

@@ -4,9 +4,12 @@ public static class Debug
 {
     public static void LogDictionary<TKey, TValue>(Dictionary<TKey, TValue> dictionary) where TKey : notnull
     {
+        Console.WriteLine("{0,-15} {1,5}", "Key", "Value");
+        Console.WriteLine(new string('-', 22));
+
         foreach (var kvp in dictionary)
         {
-            Console.WriteLine($"Key: {kvp.Key}, Value: {kvp.Value}");
+            Console.WriteLine("{0,-15} {1,5}", kvp.Key, kvp.Value);
         }
     }
 

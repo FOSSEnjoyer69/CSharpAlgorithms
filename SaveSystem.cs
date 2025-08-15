@@ -1,5 +1,6 @@
+#pragma warning disable
+
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace CSharpAlgorithms;
 
@@ -20,10 +21,5 @@ public static class SaveSystem
     {
         string json = File.ReadAllText(fileName);
         return JsonSerializer.Deserialize<T>(json);
-    }
-
-    public static void SaveAsFlexibleObjectNotation<T>(string fileName, T data)
-    {
-        throw new NotImplementedException("Flexible Object Notation is not implemented yet.");
     }
 }

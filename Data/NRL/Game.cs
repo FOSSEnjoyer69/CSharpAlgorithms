@@ -16,6 +16,8 @@ public class Game
     public string GroundCondition { get; set; } = "";
     public string WeatherCondition { get; set; } = "";
 
+    public MatchOfficial[] MatchOfficials { get; set; } = [];
+
     public TryInfo[] Tries { get; set; } = [];
     public ConversionInfo[] Conversions { get; set; } = [];
     public PenaltyGoalInfo[] PenaltyGoals { get; set; } = [];
@@ -50,6 +52,7 @@ public class Game
 
             Place = NRLScraper.GetPlace(page),
 
+            MatchOfficials = NRLScraper.GetMatchOfficials(page),
             Tries = NRLScraper.GetTries(page),
             Conversions = NRLScraper.GetConversions(page),
             PenaltyGoals = NRLScraper.GetPenaltyGoals(page),
@@ -76,8 +79,9 @@ public class Game
         SaveSystem.SaveAsJson(filePath, game);
     }
 
-    internal static Game DownloadGameSync(string matchDataUrl)
+    public static Game LoadGame(string path)
     {
-        throw new NotImplementedException();
+        Game game = SaveSystem.LoadJson<Game>(path);
+        return game;
     }
 }
