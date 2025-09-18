@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using HtmlAgilityPack;
 namespace CSharpAlgorithms.Data.NRL;
 

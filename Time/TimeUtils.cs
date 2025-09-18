@@ -1,3 +1,5 @@
+using System;
+
 namespace CSharpAlgorithms.Time;
 
 public static class TimeUtils

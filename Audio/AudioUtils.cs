@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using CSharpAlgorithms.Collections;
 using PortAudioSharp; 
 
 namespace CSharpAlgorithms.Audio;
@@ -39,6 +43,14 @@ public static class AudioUtils
         return devices;
     }
 
+    public static string[] GetDeviceNames()
+    {
+        string[] inputNames = GetInputDeviceNames();
+        string[] outputNames = GetOutputDeviceNames();
+        string[] names = CollectionUtils.CombineArray([inputNames, outputNames]);
+
+        return names;
+    }
     public static string[] GetInputDeviceNames()
     {
         List<string> names = new List<string>();
@@ -54,7 +66,6 @@ public static class AudioUtils
 
         return [.. names];
     }
-
     public static string[] GetOutputDeviceNames()
     {
         List<string> names = new List<string>();
@@ -70,7 +81,17 @@ public static class AudioUtils
 
         return [.. names];
     }
-    
+
+    public static string[] GetUnusedInputAudioDeviceNames(AudioInputDevice[] devices)
+    {
+        List<string> names = [.. GetInputDeviceNames()];
+
+        foreach (AudioInputDevice device in devices)
+            names.Remove(device.Info.name);
+
+        return [.. names];
+    }
+
     public static float[] MonoToStereo(float[] monoSamples)
     {
         float[] stereo = new float[monoSamples.Length * 2];
@@ -80,5 +101,55 @@ public static class AudioUtils
             stereo[i * 2 + 1] = monoSamples[i]; // Right
         }
         return stereo;
+    }
+
+    public static string FormatDeviceNamesAsJSon()
+    {
+        var obj = new
+        {
+            inputDevices = GetInputDeviceNames(),
+            outputDevices = GetOutputDeviceNames()
+        };
+
+        string json = System.Text.Json.JsonSerializer.Serialize(obj);
+        return json;
+    }
+
+    public static string FormatAsJson(AudioDeviceData[] datas)
+    {
+        string json = System.Text.Json.JsonSerializer.Serialize(datas);
+        return json;
+    }
+
+    public static uint GetBufferSize(double seconds, uint sampleRate, ushort channelCount)
+    {
+        return (uint)(seconds * sampleRate * channelCount);
+    }
+
+    public static AudioFrame[] Resmaple(AudioFrame[] frames, byte channelCount)
+    {
+        byte originalChannel = (byte)frames.First().Samples.Length;
+
+        if (originalChannel == 1 && channelCount == 2)
+        {
+            return ResampleMonoToStereo(frames);
+        }
+
+        return [];
+    }
+
+    public static AudioFrame[] ResampleMonoToStereo(AudioFrame[] frames)
+    {
+        AudioFrame[] newFrames = new AudioFrame[frames.Length];
+
+        for (int i = 0; i < newFrames.Length; i++)
+        {
+            float sample = frames[i].Samples[0];
+            float[] stereoSamples = [sample, sample];
+            AudioFrame frame = new AudioFrame(stereoSamples);
+            newFrames[i] = frame;
+        }
+
+        return newFrames;
     }
 }

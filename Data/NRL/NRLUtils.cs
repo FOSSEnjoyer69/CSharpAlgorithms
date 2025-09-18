@@ -2,8 +2,11 @@
 
 using CSharpAlgorithms.Images;
 using ScottPlot;
+using System;
+using System.Collections.Generic;
 using System.Drawing;
-
+using System.IO;
+using System.Linq;
 using Color = ScottPlot.Color;
 using Image = ScottPlot.Image;
 

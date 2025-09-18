@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace CSharpAlgorithms.Data.NRL;
 
 public struct FieldGoalInfo(string team, string player, byte minutesIn, byte points)

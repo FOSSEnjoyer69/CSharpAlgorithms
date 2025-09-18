@@ -1,42 +1,52 @@
+#pragma warning disable
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using CSharpAlgorithms.Interfaces;
+
+
 namespace CSharpAlgorithms.Audio;
 
 public class AudioMixer : IAudioProvider
 {
-    public List<IAudioProvider> sources = [];
+    public BleepPlayer BleepPlayer { get; set; }
 
-    public AudioOutputDevice OutputDevice { get; set; }
+    public bool PlayBleep { get; set; }
 
-    public AudioMixer(AudioOutputDevice outputDevice)
+    public Dictionary<string, AudioInputDevice> inputDevices = [];
+    public Dictionary<string, AudioOutputDevice> outputDevices = [];
+    public List<IReadMix> iReadMix = [];
+
+    public AudioMixer()
     {
-        OutputDevice = outputDevice;
-        OutputDevice.SetAudioProvider(this);
+        
     }
 
-    public float[] GetSamples(int frameCount, int channelCount)
+    public AudioFrameCollection GetFrames(uint frameCount, uint channelCount, GetSamplesArgs? args = null)
     {
-        int sampleCount = frameCount * channelCount;
-        float[] mixedSamples = new float[sampleCount];
+        AudioFrameCollection frames = new AudioFrameCollection((int)frameCount);
 
-        for (int sourceIndex = 0; sourceIndex < sources.Count; sourceIndex++)
+        for (int i = 0; i < iReadMix.Count; i++)
         {
-            float[] sourceSamples = sources[sourceIndex].GetSamples(frameCount, channelCount);
-
-            // Safety: some sources may return fewer samples
-            int availableSamples = Math.Min(sampleCount, sourceSamples.Length);
-
-            for (int i = 0; i < availableSamples; i++)
-            {
-                mixedSamples[i] += sourceSamples[i];
-            }
+            AudioFrameCollection audioFrames = iReadMix[i].ReadMix();
+            frames += audioFrames;
+        }
+        
+        foreach (var device in inputDevices)
+        {
+            AudioFrameCollection deviceFrames = device.Value.ReadMix();
+            frames += deviceFrames;
         }
 
-        // Optional: Clamp to avoid clipping
-        for (int i = 0; i < mixedSamples.Length; i++)
-        {
-            mixedSamples[i] = Math.Clamp(mixedSamples[i], -1f, 1f);
-        }
+        //if (PlayBleep)
+        //{ 
+        //    float[] bleepSamples = BleepPlayer.GetSamples(frameCount, channelCount);
+        //    mixedSamples = Calculator.Add(mixedSamples, bleepSamples);
+        //}
 
-        return mixedSamples;
+        frames.Clamp(-1, 1);
+
+        return frames;
     }
-
 }

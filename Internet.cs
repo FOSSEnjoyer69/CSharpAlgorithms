@@ -1,6 +1,9 @@
 #pragma warning disable
 
 using System;
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
 using HtmlAgilityPack;
 using PuppeteerSharp;
 
