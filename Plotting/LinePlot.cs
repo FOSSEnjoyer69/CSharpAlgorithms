@@ -1,6 +1,6 @@
-using ScottPlot;
-
 namespace CSharpAlgorithms.Plotting;
+
+using ScottPlot;
 
 public static class LinePlot
 {

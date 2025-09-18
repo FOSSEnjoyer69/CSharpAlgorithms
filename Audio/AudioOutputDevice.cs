@@ -1,172 +1,100 @@
+#pragma warning disable
+
+using CSharpAlgorithms.Interfaces;
 using PortAudioSharp;
-using System.Collections.Concurrent;
+using System;
 using System.Runtime.InteropServices;
 using AudioStream = PortAudioSharp.Stream;
 
 namespace CSharpAlgorithms.Audio;
 
-public class AudioOutputDevice : IDisposable
+public class AudioOutputDevice : IMute, IVolume, IChannelCountByte, IWriteToMix, IDisposable
 {
     public int DeviceIndex { get; private set; }
-
     public DeviceInfo Info { get; private set; }
-    public BlockingCollection<float[]> AudioBuffer { get; set; }
+    public bool IsMuted { get; set; } = false;
+    public float Volume { get; set; } = 1;
+    public byte ChannelCount { get; protected set; } = 2;
 
-    private float[]? lastSamples = null;
-    private int lastIndex = 0;
+    public AudioFrameCollection Mix { get; private set; } = [];
 
     private AudioStream stream;
-    private int sampleRate;
-
     private IAudioProvider audioProvider;
 
-    public AudioOutputDevice(BlockingCollection<float[]>? audioBuffer = null)
+    public AudioOutputDevice(string name = "default", IAudioProvider? provider=null)
     {
         PortAudio.Initialize();
-
-        SetBuffer(audioBuffer);
-        SetOutput(PortAudio.DefaultOutputDevice);
-    }
-
-    public void SetBuffer(BlockingCollection<float[]>? audioBuffer = null)
-    {
-        audioBuffer ??= [];
-        AudioBuffer = audioBuffer;
-    }
-
-    public void SetAudioProvider(IAudioProvider provider)
-    {
         audioProvider = provider;
+        SetOutput(name);
     }
 
+    public void SetOutput(string deviceName) => SetOutput(AudioUtils.GetDeviceIndex(deviceName));
     public void SetOutput(int deviceIndex)
     {
+        const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioOutputDevice.SetOutput]";
+
         if (deviceIndex == PortAudio.NoDevice)
-            throw new InvalidOperationException($"No audio output device found at {deviceIndex}.");
-
-        try
         {
-            AudioStream previousStream = stream;
-
-            DeviceInfo deviceInfo = PortAudio.GetDeviceInfo(deviceIndex);
-
-
-            sampleRate = (int)deviceInfo.defaultSampleRate;
-
-            StreamParameters streamParameters = new StreamParameters
-            {
-                device = deviceIndex,
-                channelCount = 2,
-                sampleFormat = SampleFormat.Float32,
-                suggestedLatency = deviceInfo.defaultLowOutputLatency,
-                hostApiSpecificStreamInfo = IntPtr.Zero
-            };
-
-            stream = new AudioStream(
-                inParams: null,
-                outParams: streamParameters,
-                sampleRate: sampleRate,
-                framesPerBuffer: 0,
-                streamFlags: StreamFlags.ClipOff,
-                callback: Callback,
-                userData: IntPtr.Zero
-            );
-
-            stream.Start();
-
-            if (previousStream is not null)
-            {
-                previousStream.Stop();
-                previousStream.Dispose();
-                lastSamples = null;
-                lastIndex = 0;
-            }
-
-            DeviceIndex = deviceIndex;
-            Info = deviceInfo;
+            Debug.WriteErrorLine($"{CALL_PATH} No audio device found at index {deviceIndex}");
+            return;
         }
-        catch (Exception ex)
+
+        AudioStream previousStream = stream;
+
+        Info = PortAudio.GetDeviceInfo(deviceIndex);
+
+        StreamParameters streamParameters = new StreamParameters
         {
-            Console.WriteLine($"Failed to set AudioOutputDevice output, {ex.Message}");
-            throw;
+            device = deviceIndex,
+            channelCount = ChannelCount,
+            sampleFormat = SampleFormat.Float32,
+            suggestedLatency = Info.defaultLowOutputLatency,
+            hostApiSpecificStreamInfo = IntPtr.Zero
+        };
+
+        stream = new AudioStream(
+            inParams: null,
+            outParams: streamParameters,
+            sampleRate: AudioSettings.SampleRate,
+            framesPerBuffer: AudioSettings.FramesPerBuffer,
+            streamFlags: StreamFlags.ClipOff,
+            callback: Callback,
+            userData: IntPtr.Zero
+        );
+
+
+        if (previousStream is not null)
+        {
+            previousStream.Stop();
+            previousStream.Dispose();
         }
+
+        stream.Start();
+
+        DeviceIndex = deviceIndex;
     }
 
-    private StreamCallbackResult Callback(IntPtr input, IntPtr output, uint frameCount,
-    ref StreamCallbackTimeInfo timeInfo, StreamCallbackFlags statusFlags, IntPtr userData)
-{
-    int channelCount = 2;
-    int expectedSamples = (int)(frameCount * channelCount);
-    float[] buffer = new float[expectedSamples];
-
-    if (audioProvider != null)
+    private StreamCallbackResult Callback(IntPtr input, IntPtr output, uint frameCount, ref StreamCallbackTimeInfo timeInfo, StreamCallbackFlags statusFlags, IntPtr userData)
     {
-        try
+        const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioOutputDevice.Callback]";
+        float[] buffer = audioProvider.GetFrames(frameCount, ChannelCount);
+
+        return SendBuffer();
+
+        StreamCallbackResult SendBuffer()
         {
-            float[] samples = audioProvider.GetSamples((int)frameCount, channelCount);
-            if (samples.Length < expectedSamples)
-            {
-                Array.Copy(samples, buffer, samples.Length);
-                Array.Clear(buffer, samples.Length, expectedSamples - samples.Length);
-            }
-            else
-            {
-                Array.Copy(samples, buffer, expectedSamples);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"AudioProvider error: {ex.Message}");
-            Array.Clear(buffer, 0, expectedSamples); // Fallback to silence
+            Marshal.Copy(buffer, 0, output, buffer.Length);
+            return StreamCallbackResult.Continue;
         }
     }
-    else
-    {
-        int written = 0;
-
-        while (written < expectedSamples && (lastSamples != null || AudioBuffer.Count > 0))
-        {
-            if (lastSamples == null && AudioBuffer.TryTake(out var next))
-            {
-                lastSamples = next;
-                lastIndex = 0;
-            }
-
-            if (lastSamples == null) break;
-
-            int remaining = lastSamples.Length - lastIndex;
-            int toWrite = Math.Min(remaining, expectedSamples - written);
-
-            Array.Copy(lastSamples, lastIndex, buffer, written, toWrite);
-            written += toWrite;
-            lastIndex += toWrite;
-
-            if (lastIndex >= lastSamples.Length)
-            {
-                lastSamples = null;
-                lastIndex = 0;
-            }
-        }
-
-        if (written < expectedSamples)
-        {
-            Array.Clear(buffer, written, expectedSamples - written);
-        }
-
-        if (AudioBuffer.IsCompleted && lastSamples == null && lastIndex == 0)
-        {
-            return StreamCallbackResult.Complete;
-        }
-    }
-
-    Marshal.Copy(buffer, 0, output, expectedSamples);
-    return StreamCallbackResult.Continue;
-}
-
 
     public void Dispose()
     {
         stream?.Dispose();
-        PortAudio.Terminate();
+    }
+
+    public void WriteToMix(AudioFrame[] frames)
+    {
+        Mix = frames;
     }
 }

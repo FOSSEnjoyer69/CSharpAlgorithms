@@ -1,186 +1,97 @@
+#pragma warning disable
+
 using System;
-using System.Diagnostics;
 using System.Collections.Concurrent;
+using System.IO;
+using System.Threading;
+using CSharpAlgorithms.Interfaces;
+
+using PortAudioSharp;
+using AudioStream = PortAudioSharp.Stream;
+
 
 namespace CSharpAlgorithms.Audio;
 
-public class AudioPlayer : IAudioBuffer, IAudioProvider
+using static Calculator;
+
+public class AudioPlayer : IReadMix, IPlay, IPause, IIsPlaying
 {
     public AudioClip clip;
-    public bool loop = false;
 
-    private Thread playThread;
-
+    public int Position { get; set; } = 0;
 
 
-    private double latencySeconds;
-    private int framesPerBuffer;
-    private int position = 0;
-    private double blockDurationSeconds;
-
-    public BlockingCollection<float[]> AudioBuffer { get; set; }
-
-    public bool IsFinished => !(position < clip.Samples.Length);
     public bool IsPlaying { get; private set; } = false;
-    public bool HasStarted { get; private set; } = false;
+    public bool IsFinished => Position >= clip.Length;
+    public bool Loop { get; set; } = false;
 
-    private readonly ManualResetEventSlim pauseEvent = new(true); // starts unpaused
-    private readonly object lockObj = new();
+    private AudioFrameCollection m_buffer = new((int)AudioSettings.FramesPerBuffer);
 
-    private readonly Mode mode;
+    private AudioStream stream;
 
-    public enum Mode
-    {
-        WithOutputDevice,
-        WithAudioMixer
-    }
-
-    public AudioPlayer(AudioClip clip, AudioOutputDevice outputDevice)
-    {
-        AudioBuffer = outputDevice.AudioBuffer ?? throw new Exception("Output device must provide a buffer");
-
-        this.clip = clip;
-        latencySeconds = outputDevice.Info.defaultLowOutputLatency;
-        framesPerBuffer = (int)(clip.SampleRate * latencySeconds);
-        blockDurationSeconds = (double)framesPerBuffer / clip.SampleRate;
-
-        mode = Mode.WithOutputDevice;
-    }
-
-    public AudioPlayer(AudioClip clip, AudioMixer audioMixer)
+    public AudioPlayer(AudioClip clip)
     {
         this.clip = clip;
 
-        audioMixer.sources.Add(this);
+        int deviceIndex = AudioUtils.GetDeviceIndex("default");
+        DeviceInfo Info = PortAudio.GetDeviceInfo(deviceIndex);
 
-        mode = Mode.WithAudioMixer;
-    }
-
-    public void Play()
-    {
-        if (clip is null)
+        StreamParameters streamParams = new StreamParameters
         {
-            Console.WriteLine("Cannot start playing 'clip' is null");
-            return;
-        }
-
-        if (IsPlaying)
-            return;
-
-        Console.WriteLine($"Playing {clip.Name}");
-
-        IsPlaying = true;
-        HasStarted = true;
-
-        if (mode == Mode.WithAudioMixer)
-        {
-            // No need to start a thread for AudioMixer, it will be handled by the mixer
-            return;
-        }
-
-        playThread = new Thread(PlaybackLoop)
-        {
-            IsBackground = true
+            device = deviceIndex,
+            channelCount = 2,
+            sampleFormat = SampleFormat.Float32,
+            suggestedLatency = Info.defaultLowInputLatency,
+            hostApiSpecificStreamInfo = IntPtr.Zero
         };
 
-        playThread.Start();
+        // Use device default sample rate instead of forcing AudioSettings.SampleRate
+        stream = new AudioStream
+        (
+            inParams: null,
+            outParams: streamParams,
+            sampleRate: AudioSettings.SampleRate,
+            framesPerBuffer: AudioSettings.FramesPerBuffer,
+            streamFlags: StreamFlags.ClipOff,
+            callback: Callback,
+            userData: IntPtr.Zero
+        );
+
+        stream.Start();
     }
 
-    public void Pause() => pauseEvent.Reset();
-    public void Resume() => pauseEvent.Set();
+    public void Play() => IsPlaying = true;
+    public void Pause() => IsPlaying = false;
 
-    public void Restart()
+    private AudioFrameCollection GetFrames(int frameCount)
     {
-        lock (lockObj)
-        {
-            position = 0;
-            IsPlaying = true;
-        }
+        const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioPlayer.GetFrames]";
 
-        if (playThread is not null && playThread?.IsAlive == true)
-        {
-            Resume();
-        }
-        else
-        {
-            HasStarted = false;
-            Play();
-        }
-    }
-
-    private void PlaybackLoop()
-    {
-        try
-        {
-            while (true)
-            {
-                pauseEvent.Wait();
-
-                float[] block;
-
-                lock (lockObj)
-                {
-                    if (!IsPlaying || position >= clip.Samples.Length)
-                        break;
-
-                    block = GetSamples(framesPerBuffer, clip.ChannelCount);
-                    AudioBuffer.Add(block);
-                }
-
-                Thread.Sleep(TimeSpan.FromSeconds(blockDurationSeconds));
-            }
-        }
-        catch
-        {
-            Console.WriteLine($"Audio playback thread error");
-            throw;
-        }
-    }
-    public float[] GetSamples(int frameCount, int channelCount)
-    {
         if (!IsPlaying)
             return [];
 
-        int clipChannels = clip.ChannelCount;
-        int remaining = clip.Samples.Length - position;
-        int samplesNeeded = frameCount * clipChannels;
+        int remainingFrames = clip.Length - Position;
+        int framesToRead = Calculator.Min(frameCount, remainingFrames);
 
-        if (remaining <= 0)
+        AudioFrameCollection frames = clip.Frames.Sample(Position, framesToRead);
+
+        Position += framesToRead;
+        if (IsFinished)
         {
-            position = 0;
-            if (!loop)
+            Position = 0;
+
+            if (!Loop)
                 IsPlaying = false;
-
-            return [];
         }
 
-        int blockSize = Math.Min(samplesNeeded, remaining);
-        float[] sourceBlock = new float[blockSize];
-        Array.Copy(clip.Samples, position, sourceBlock, 0, blockSize);
-        position += blockSize;
-
-        // Upmix if needed
-        if (clipChannels == channelCount)
-        {
-            return sourceBlock;
-        }
-        else if (clipChannels == 1 && channelCount == 2)
-        {
-            int frames = blockSize;
-            float[] stereo = new float[frames * 2];
-
-            for (int i = 0; i < frames; i++)
-            {
-                float monoSample = sourceBlock[i];
-                stereo[i * 2] = monoSample;     // Left
-                stereo[i * 2 + 1] = monoSample; // Right
-            }
-
-            return stereo;
-        }
-        else
-        {
-            throw new NotSupportedException("Unsupported channel conversion.");
-        }
+        return frames;
     }
+
+    private StreamCallbackResult Callback(IntPtr input, IntPtr output, uint frameCount, ref StreamCallbackTimeInfo timeInfo, StreamCallbackFlags statusFlags, IntPtr userData)
+    {
+        m_buffer = GetFrames((int)frameCount);
+        return StreamCallbackResult.Continue;
+    }
+
+    public AudioFrameCollection ReadMix() => m_buffer;    
 }

@@ -1,17 +1,24 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace CSharpAlgorithms;
 public class Server
 {
+    public string Prefix { get; private set; } = "";
+
     private HttpListener m_listener;
 
-    private HtmlFile? m_indexPage = null;
+    private string indexPagePath;
 
     // Change the type to support async handlers
     private Dictionary<string, Func<HttpListenerRequest, HttpListenerResponse, Task>> m_customFunctions;
     private Dictionary<string, string> m_filePaths = new Dictionary<string, string>();
+    private Dictionary<string, string> m_folderPaths = new Dictionary<string, string>();
 
     public Server()
     {
@@ -23,25 +30,20 @@ public class Server
 
     public async Task Start(int port = -1, bool open=true)
     {
+        const string CALL_PATH = "[CSharpAlgorithms.Server.Start]";
+
         string localIP = NetworkUtils.GetLocalIPAddress();
         if (port == -1)
             port = NetworkUtils.GetAvailablePort();
 
-        string prefix = $"http://{localIP}:{port}/";
-        m_listener.Prefixes.Add(prefix);
+        Prefix = $"http://{localIP}:{port}/";
+        m_listener.Prefixes.Add(Prefix);
 
         m_listener.Start();
-        Console.WriteLine($"CSharpHTTPServer started at {prefix}");
+        Console.WriteLine($"CSharpHTTPServer started at {Prefix}");
 
-        // Open the server in a browser
         if (open)
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = prefix,
-                UseShellExecute = true // Ensures the system uses the default web browser
-            });
-        }
+            OpenInBrowser();
 
         while (true)
         {
@@ -49,8 +51,14 @@ public class Server
             var request = context.Request;
             var response = context.Response;
 
+            if (request.Url is null)
+            {
+                Debug.WriteErrorLine($"{CALL_PATH} Request URL is null");
+                continue;
+            }
+
             string path = request.Url.AbsolutePath;
-            Console.WriteLine(path);
+            Console.WriteLine($"{CALL_PATH} Request for {path}");
 
             if (path == "/")
                 await HandleRoot(request, response);
@@ -62,22 +70,27 @@ public class Server
             }
             else if (m_filePaths.ContainsKey(path))
             {
-                string text = File.ReadAllText(m_filePaths[path]);
+                string filePath = m_filePaths[path];
+                FileInfo fileInfo = new FileInfo(filePath);
+                string text = File.ReadAllText(filePath);
+
+                if (fileInfo.Extension.Equals(".js"))
+                {
+                    await Responses.SendJavascriptResponse(response, text);
+                    continue;
+                }
+                
                 await Responses.SendTextRespone(response, text);
             }
             else
             {
+                Debug.WriteErrorLine($"{CALL_PATH} No handler for {path}");
                 await Responses.HandleNotFound(request, response);
             }
         }
     }
 
-    public void AddIndexPage(string filePath)
-    {
-        HtmlFile file = new HtmlFile(filePath, false);
-        m_indexPage = file;
-    }
-
+    public void AddIndexPage(string filePath) => indexPagePath = filePath;
     public void AddCustomPath(string path, Func<HttpListenerRequest, HttpListenerResponse, Task> handler)
     {
         m_customFunctions[path] = handler;
@@ -85,20 +98,40 @@ public class Server
 
     public void LinkFile(string filePath, string linkPath)
     {
-        if (File.Exists(filePath))
+        const string CALL_PATH = "[CSharpAlgorithms.Server.LinkFile]";
+
+        if (!File.Exists(filePath))
         {
-            m_filePaths[$"/{linkPath}"] = filePath;
-            Console.WriteLine($"Linked {filePath} to {linkPath}");
+            Debug.WriteErrorLine($"{CALL_PATH} File {filePath} does not exist.");
+            return;
         }
-        else
+        
+        if (linkPath[0] != '/')
+            linkPath = "/" + linkPath;
+
+
+        linkPath = linkPath.ToLower()
+                           .Replace(" ", "-");
+
+        m_filePaths[linkPath] = filePath;
+        Console.WriteLine($"{CALL_PATH} Linked {filePath} to {linkPath}");
+    }
+
+    public void OpenInBrowser()
+    {
+        Process.Start(new ProcessStartInfo
         {
-            Console.WriteLine($"File {filePath} does not exist.");
-        }
+            FileName = Prefix,
+            UseShellExecute = true // Ensures the system uses the default web browser
+        });
     }
 
     private async Task HandleRoot(HttpListenerRequest request, HttpListenerResponse response)
     {
-        string responseString = m_indexPage?.Content ?? "Welcome to the server!";
+        string responseString = "Welcome to the server!";
+        if (File.Exists(indexPagePath))
+            responseString = await File.ReadAllTextAsync(indexPagePath);
+
         byte[] buffer = Encoding.UTF8.GetBytes(responseString);
 
         response.ContentLength64 = buffer.Length;

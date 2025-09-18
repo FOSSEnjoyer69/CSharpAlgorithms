@@ -1,5 +1,11 @@
 namespace CSharpAlgorithms.Audio;
 public interface IAudioProvider
 {
-    float[] GetSamples(int frameCount, int channelCount);
+    AudioFrameCollection GetFrames(uint frameCount, uint channelCount, GetSamplesArgs? args = null);
+}
+
+public struct GetSamplesArgs
+{
+    public string? DeviceName;
+    public bool IncludeMicrophone;
 }
