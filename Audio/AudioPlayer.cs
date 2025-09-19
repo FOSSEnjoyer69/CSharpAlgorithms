@@ -2,7 +2,6 @@ using System;
 using PortAudioSharp;
 using AudioStream = PortAudioSharp.Stream;
 
-
 namespace CSharpAlgorithms.Audio;
 
 public class AudioPlayer : IReadMix, IPlay, IPause, IIsPlaying
@@ -57,20 +56,16 @@ public class AudioPlayer : IReadMix, IPlay, IPause, IIsPlaying
     private AudioFrameCollection GetFrames(int frameCount)
     {
         if (!IsPlaying)
-            return new AudioFrameCollection(0); // safer empty
+            return [];
 
         int remainingFrames = clip.Length - Position;
         if (remainingFrames <= 0)
         {
-            if (Loop)
-            {
-                Position = 0;
-                remainingFrames = clip.Length;
-            }
-            else
+            Position = 0;
+            if (!Loop)
             {
                 IsPlaying = false;
-                return new AudioFrameCollection(0);
+                return [];
             }
         }
 

@@ -13,13 +13,13 @@ public static class TimeUtils
     public static ushort GetMonthNumber(string monthName)
     {
         monthName = monthName.Trim().ToLower();
+
         for (ushort i = 0; i < Months.Length; i++)
-        {
-            if (Months[i].ToLower() == monthName)
-            {
+            if (Months[i].Equals(monthName, StringComparison.CurrentCultureIgnoreCase))
                 return (ushort)(i + 1);
-            }
-        }
+
         throw new ArgumentException($"[CSharpAlgorithms.Time.Timeutils.GetMonthNumber] Invalid month name: {monthName}");
     }
+    
+    public static double SecondsToMilliSeconds(double seconds) => (seconds * 1_000);
 }
