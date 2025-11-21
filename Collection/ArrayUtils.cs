@@ -1,4 +1,7 @@
 
+using System;
+using System.Numerics;
+
 namespace CSharpAlgorithms.Collection;
 public static class ArrayUtils
 {
@@ -32,7 +35,7 @@ public static class ArrayUtils
     public static void Stretch(float[] sourceCopy, int ratio)
     {
         ArgumentNullException.ThrowIfNull(sourceCopy);
-        
+
         if (ratio <= 1)
             return;
 
@@ -51,5 +54,17 @@ public static class ArrayUtils
         // Copy back to sourceCopy (resize if needed)
         Array.Resize(ref sourceCopy, newLength);
         Array.Copy(stretched, sourceCopy, newLength);
+    }
+
+    public static void XOR<T>(T[] data, T xorNum) where T : IBitwiseOperators<T, T, T>
+    {
+        for (int i = 0; i < data.Length; i++)
+            data[i] ^= xorNum;
+    }
+    
+    public static void XOR<T1, T2>(T1[] data, T2 xorNum) where T1: IBitwiseOperators<T1, T2, T1>
+    {
+        for (int i = 0; i < data.Length; i++)
+            data[i] ^= xorNum;
     }
 }

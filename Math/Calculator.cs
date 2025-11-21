@@ -1,3 +1,7 @@
+#pragma warning disable
+
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 using CSharpAlgorithms.Collection;
 
@@ -162,5 +166,20 @@ public static class Calculator
         T topBottomSum = (top + bottom) / T.CreateChecked(2);
         T result = topBottomSum * height;
         return result;
+    }
+
+    public static (T, string) GetApprioateUnit<T>(T bytes) where T : INumber<T>, IComparisonOperators<T, T, bool>
+    {
+        string[] units = { "B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
+        T kilo = T.CreateChecked(1024);
+        int unitIndex = 0;
+
+        while (bytes >= kilo && unitIndex < units.Length - 1)
+        {
+            bytes /= kilo;
+            unitIndex++;
+        }
+
+        return (bytes, units[unitIndex]);
     }
 }

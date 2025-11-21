@@ -7,7 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="MP3Sharp" Version="1.0.5" />
+    <PackageReference Include="Pepper" Version="4.0.0" />
     <PackageReference Include="PortAudioSharp" Version="0.3.0" />
   </ItemGroup>
 
