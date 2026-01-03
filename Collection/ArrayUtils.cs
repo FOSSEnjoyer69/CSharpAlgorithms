@@ -5,6 +5,17 @@ using System.Numerics;
 namespace CSharpAlgorithms.Collection;
 public static class ArrayUtils
 {
+    public static T[] Add<T>(this T[] a, T[] b)
+    {
+        int newLength = a.Length + b.Length;
+        T[] results = new T[newLength];
+
+        Array.Copy(a, sourceIndex: 0, results, destinationIndex: 0, a.Length);
+        Array.Copy(b, sourceIndex: a.Length, results, destinationIndex: a.Length, b.Length);
+
+        return results;
+    }
+
     public static long GetLongestLength<T>(params T[][] arrays)
     {
         long length = 0;
