@@ -339,9 +339,11 @@ public struct Vector3<T> : INumber<Vector3<T>> , IByteSize, IEquatable<Vector3<T
         throw new NotImplementedException();
     }
 
-    public unsafe uint GetByteSize()
+    public readonly unsafe uint GetByteSize()
     {
+        #pragma warning disable
         return (uint)(sizeof(T) * 3);
+        #pragma warning restore
     }
 
     public static Vector3<T> operator +(Vector3<T> value) => value;

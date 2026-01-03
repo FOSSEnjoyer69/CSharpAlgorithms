@@ -4,7 +4,7 @@ using CSharpAlgorithms.Interfaces;
 
 namespace CSharpAlgorithms.Math;
 
-public class BoundingSphere<T> : IByteSize
+public class Sphere<T> : IByteSize
     where T : struct, INumber<T>
 {
     public Vector3<T> Center;
@@ -12,13 +12,13 @@ public class BoundingSphere<T> : IByteSize
 
     private uint blockSize = 20;
 
-    public BoundingSphere(Vector3<T> center, T radius)
+    public Sphere(Vector3<T> center, T radius)
     {
         Center = center;
         Radius = radius;
     }
 
-    public BoundingSphere(BinaryReader reader)
+    public Sphere(BinaryReader reader)
     {
         reader.ReadUInt32();
 
@@ -46,9 +46,11 @@ public class BoundingSphere<T> : IByteSize
 
     public override string ToString()
     {
-        return $"[CSharpAlgorithms.Math.BoundingSphere<{typeof(T).Name}>: Center={Center}, Radius={Radius}]";
+        return $"[CSharpAlgorithms.Math.Sphere<{typeof(T).Name}>: Center={Center}, Radius={Radius}]";
     }
 
+    #pragma warning disable
     public unsafe uint GetByteSize() => (uint)(sizeof(T) + sizeof(uint) + Center.GetByteSize());
+    #pragma warning restore
     
 }
