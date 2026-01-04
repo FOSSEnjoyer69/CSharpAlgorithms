@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.IO.Compression;
 
@@ -16,6 +17,10 @@ public static class DirectoryUtils
             else if (Directory.Exists(targetPath))
             {
                 Directory.Delete(targetPath, true);
+            }
+            else
+            {
+                Console.WriteLine($"{targetPath} does not exist.");
             }
         }   
     }
