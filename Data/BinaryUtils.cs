@@ -15,11 +15,13 @@ public static class BinaryUtils
     public static bool ReadTelltaleBoolean(this BinaryReader reader) => ReadCharAsBoolean(reader);
     public static bool ReadCharAsBoolean(this BinaryReader reader)
     {
-        return reader.ReadChar() switch
+        char character = reader.ReadChar();
+
+        return character switch
         {
             '1' => true,
             '0' => false,
-            _ => throw new Exception("Invalid Telltale Boolean data."),
+            _ => throw new Exception($"Invalid Telltale Boolean data. value was {character} instead of '0' or '1'"),
         };
     }
 
