@@ -11,6 +11,7 @@ public static class Calculator
 {
     public static double RateToInterval(double rate) => 1 / rate;
 
+    public static T ClampInclusive<T>(T value) where T: INumber<T> => ClampInclusive(value, T.Zero, T.One);
     public static T ClampInclusive<T>(T value, T min, T max) where T : IComparable<T>
     {
         if (value.CompareTo(min) <= 0)

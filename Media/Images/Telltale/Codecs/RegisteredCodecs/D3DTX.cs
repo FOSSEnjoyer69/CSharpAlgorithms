@@ -1,3 +1,4 @@
+using System;
 using TelltaleTextureTool.Graphics;
 using TelltaleTextureTool.Main;
 using TelltaleTextureTool.TelltaleEnums;

@@ -1,3 +1,5 @@
+using System.IO;
+using System.Linq;
 using TelltaleTextureTool.Codecs;
 using TelltaleTextureTool.Graphics;
 using TelltaleTextureTool.TelltaleEnums;
