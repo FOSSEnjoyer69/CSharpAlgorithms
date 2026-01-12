@@ -2,7 +2,6 @@
 using System.Runtime.InteropServices;
 
 namespace TelltaleTextureTool.TelltaleTypes;
-
 public struct Vector2
 {
     public float x;
@@ -24,8 +23,8 @@ public struct Vector2
     {
         uint totalByteSize = 0;
 
-        totalByteSize += (uint)Marshal.SizeOf(x); // x [4 bytes]
-        totalByteSize += (uint)Marshal.SizeOf(y); // y [4 bytes]
+        totalByteSize += (uint)Marshal.SizeOf(x); //x [4 bytes]
+        totalByteSize += (uint)Marshal.SizeOf(y); //y [4 bytes]
 
         return totalByteSize;
     }

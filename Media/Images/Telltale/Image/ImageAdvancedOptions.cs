@@ -1,6 +1,5 @@
-using System.ComponentModel;
-using CommunityToolkit.Mvvm.ComponentModel;
-using TelltaleTextureTool.Codecs;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
+using TelltaleTextureTool.DirectX;
 using TelltaleTextureTool.Graphics;
 using TelltaleTextureTool.TelltaleEnums;
 
@@ -31,11 +30,13 @@ public partial class ImageAdvancedOptions : ObservableObject
     private bool _compression;
 
     [ObservableProperty]
+    private bool _isLegacyConsole;
+
+    [ObservableProperty]
     private bool _enableAutomaticCompression = true;
 
     [ObservableProperty]
     private bool _isAutomaticCompression;
-
     [ObservableProperty]
     private bool _enableTelltaleNormalMap = true;
 
@@ -44,7 +45,6 @@ public partial class ImageAdvancedOptions : ObservableObject
 
     [ObservableProperty]
     private bool _isTelltaleXYNormalMap = false;
-
     [ObservableProperty]
     private bool _isSRGB = false;
 
@@ -79,13 +79,16 @@ public partial class ImageAdvancedOptions : ObservableObject
     private bool _isDeswizzle;
 
     [ObservableProperty]
-    private Platform _platformType = Platform.None;
+    private T3PlatformType _platformType = T3PlatformType.ePlatform_All;
 
     [ObservableProperty]
     private bool _enableAlpha;
 
     [ObservableProperty]
     private T3TextureAlphaMode _alphaFormat;
+
+    [ObservableProperty]
+    private ImageEffect _imageEffect;
 
     public ImageAdvancedOptions(ImageAdvancedOptions imageAdvancedOptions)
     {
@@ -102,6 +105,7 @@ public partial class ImageAdvancedOptions : ObservableObject
         _isTelltaleNormalMap = imageAdvancedOptions._isTelltaleNormalMap;
         _enableNormalMap = imageAdvancedOptions._enableNormalMap;
         _enableTelltaleNormalMap = imageAdvancedOptions._enableTelltaleNormalMap;
+        _isLegacyConsole = imageAdvancedOptions._isLegacyConsole;
         _encodeDDSHeader = imageAdvancedOptions._encodeDDSHeader;
         _filterValues = imageAdvancedOptions._filterValues;
         _enableWrapU = imageAdvancedOptions._enableWrapU;
@@ -113,13 +117,9 @@ public partial class ImageAdvancedOptions : ObservableObject
         _platformType = imageAdvancedOptions._platformType;
         _enableAlpha = imageAdvancedOptions._enableAlpha;
         _alphaFormat = imageAdvancedOptions._alphaFormat;
+        _imageEffect = imageAdvancedOptions._imageEffect;
     }
 
     public ImageAdvancedOptions() { }
 
-    // Override OnPropertyChanged to trigger the MainViewModel's command
-    protected override void OnPropertyChanged(PropertyChangedEventArgs e)
-    {
-        base.OnPropertyChanged(e);
-    }
 }

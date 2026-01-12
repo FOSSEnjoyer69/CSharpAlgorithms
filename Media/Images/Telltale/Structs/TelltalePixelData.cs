@@ -13,19 +13,16 @@ public struct TelltalePixelData
     {
         length = reader.ReadUInt32();
 
-        if (length > reader.BaseStream.Length - reader.BaseStream.Position)
+        if (IsEncrypted)
         {
-            throw new Exception("Pixel data length is larger than the file size.");
+            for (int i = 0; i < 16; i++)
+            {
+                reader.ReadUInt32();
+            }
+            length -= 128;
         }
 
         pixelData = reader.ReadBytes((int)length);
-
-        if (pixelData.Length != length)
-        {
-            throw new Exception(
-                "Pixel data length does not match the length specified in the header."
-            );
-        }
     }
 
     public TelltalePixelData(BinaryReader reader, int skip)
@@ -58,7 +55,7 @@ public struct TelltalePixelData
         length = (uint)pixelData.Length;
     }
 
-    public readonly uint GetByteSize()
+    public uint GetByteSize()
     {
         uint totalByteSize = 0;
 
@@ -68,5 +65,5 @@ public struct TelltalePixelData
         return totalByteSize;
     }
 
-    public override readonly string ToString() => string.Format("Pixel Data: {0} bytes", length);
+    public override string ToString() => string.Format("Pixel Data: {0} bytes", length);
 }

@@ -1,53 +1,53 @@
 using System;
-using Avalonia.Media;
 using CSharpAlgorithms.Math;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+
+using SixLaborsImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
+
 
 namespace CSharpAlgorithms.Media.Images;
 
 using static CurveFittingCalculator;
 
-public sealed class ImageEditor(Image<Rgba32> image)
+public sealed class ImageEditor(SixLaborsImage image)
 {
-    public Image<Rgba32> Image { get; private set; } = image;
+    public Image Image { get; private set; } = image;
 
     /// <summary>
     /// 
     /// </summary>
     /// <param name="ratio">0 is no colour (grey scale), 1 is the original, this is interpolated</param>
     /// <param name="mask">a mask to restrict the affected area, no mask will affect the whole image</param>
-    public void SetSaturation(float ratio, Image<Rgba32>? mask = null)
-    {
-        Image.ProcessPixelRows(accessor =>
-        {
-            for (int y = 0; y < accessor.Height; y++)
-            {
-                var pixelRow = accessor.GetRowSpan(y);
-                for (int x = 0; x < pixelRow.Length; x++)
-                {
-                    Rgba32 originalPixel = pixelRow[x];
+    //public void SetSaturation(float ratio, Image<Rgba32>? mask = null)
+    //{
+    //    Image.ProcessPixelRows(accessor =>
+    //    {
+    //        for (int y = 0; y < accessor.Height; y++)
+    //        {
+    //            var pixelRow = accessor.GetRowSpan(y);
+    //            for (int x = 0; x < pixelRow.Length; x++)
+    //            {
+    //                Rgba32 originalPixel = pixelRow[x];
+    //
+    //                float maskFactor = 1f;
+    //                if (mask != null)
+    //                {
+    //                    Rgba32 maskPixel = mask[x, y];
+    //                    maskFactor = 1f - ((maskPixel.R + maskPixel.G + maskPixel.B) / (255f * 3f));
+    //                }
+    //
+    //                float gray = (originalPixel.R + originalPixel.G + originalPixel.B) / 3;
+    //
+    //                byte r = (byte)LinerInterpolation(gray, originalPixel.R, maskFactor);
+    //                byte g = (byte)LinerInterpolation(gray, originalPixel.G, maskFactor);
+    //                byte b = (byte)LinerInterpolation(gray, originalPixel.B, maskFactor);
+    //
+    //                pixelRow[x] = new Rgba32(r, g, b, originalPixel.A);
+    //            }
+    //        }
+    //    });
+    //}
 
-                    float maskFactor = 1f;
-                    if (mask != null)
-                    {
-                        Rgba32 maskPixel = mask[x, y];
-                        maskFactor = 1f - ((maskPixel.R + maskPixel.G + maskPixel.B) / (255f * 3f));
-                    }
-
-                    float gray = (originalPixel.R + originalPixel.G + originalPixel.B) / 3;
-
-                    byte r = (byte)LinerInterpolation(gray, originalPixel.R, maskFactor);
-                    byte g = (byte)LinerInterpolation(gray, originalPixel.G, maskFactor);
-                    byte b = (byte)LinerInterpolation(gray, originalPixel.B, maskFactor);
-
-                    pixelRow[x] = new Rgba32(r, g, b, originalPixel.A);
-                }
-            }
-        });
-    }
-
-    public void Colourize(HSLColour colour, float opacity = 1f, Image<Rgba32>? mask = null, float lightnessShift = 0f)
+    public void Colourize(HSLColour colour, float opacity = 1f, Image? mask = null, float lightnessShift = 0f)
     {
         opacity = Calculator.ClampInclusive(opacity, 0f, 1f);
         if (opacity <= 0f) return;
@@ -59,47 +59,91 @@ public sealed class ImageEditor(Image<Rgba32> image)
         // Optional: GIMP-like lightness shift slider in [-1..+1]
         lightnessShift = Calculator.ClampInclusive(lightnessShift, -1f, 1f);
 
-        Image.ProcessPixelRows(accessor =>
+        for (uint y = 0; y < Image.Height; y++)
         {
-            for (int y = 0; y < accessor.Height; y++)
+            for (uint x = 0; x < Image.Width; x++)
             {
-                Span<Rgba32> row = accessor.GetRowSpan(y);
+                if (!Image.TryGetPixel(x, y, out RGBAColour<byte> pixel))
+                    return;
 
-                for (int x = 0; x < row.Length; x++)
-                {
-                    Rgba32 src = row[x];
 
-                    float maskFactor = 1f;
-                    if (mask is not null)
-                        maskFactor = SrgbLuma01(mask[x, y]); // white=apply, black=skip
+                float maskFactor = 1f;
+                if (mask is not null && mask.TryGetPixel(x, y, out RGBAColour<byte> maskPixel))
+                    maskFactor = SrgbLuma01(maskPixel); // white=apply, black=skip
 
-                    float t = opacity * maskFactor;
-                    if (t <= 0f) continue;
+                float t = opacity * maskFactor;
+                if (t <= 0f) continue;
 
-                    // Work in 0..1
-                    float sr = src.R / 255f;
-                    float sg = src.G / 255f;
-                    float sb = src.B / 255f;
 
-                    // Keep source shading
-                    HSLColour srcHsl = ColourConverter.RGB_To_HSL(sr, sg, sb);
-                    float outL = ApplyLightnessShift(srcHsl.Luminance, lightnessShift);
+                // Work in 0..1
+                float sr = pixel.R / 255f;
+                float sg = pixel.G / 255f;
+                float sb = pixel.B / 255f;
 
-                    // Replace hue/sat
-                    var outHsl = new HSLColour(targetHue, targetSat, outL);
+                // Keep source shading
+                HSLColour srcHsl = ColourConverter.RGB_To_HSL(sr, sg, sb);
+                float outL = ApplyLightnessShift(srcHsl.Luminance, lightnessShift);
 
-                    // Convert back to RGB (0..1 floats in your Colour struct)
-                    Colour outRgb = ColourConverter.HSL_To_RGB(outHsl);
+                // Replace hue/sat
+                var outHsl = new HSLColour(targetHue, targetSat, outL);
 
-                    // Blend in 0..1, then convert to bytes
-                    float fr = Lerp(sr, outRgb.r, t);
-                    float fg = Lerp(sg, outRgb.g, t);
-                    float fb = Lerp(sb, outRgb.b, t);
+                // Convert back to RGB (0..1 floats in your Colour struct)
+                Colour outRgb = ColourConverter.HSL_To_RGB(outHsl);
 
-                    row[x] = new Rgba32(ToByte(fr), ToByte(fg), ToByte(fb), src.A);
-                }
+                // Blend in 0..1, then convert to bytes
+                float fr = Lerp(sr, outRgb.r, t);
+                float fg = Lerp(sg, outRgb.g, t);
+                float fb = Lerp(sb, outRgb.b, t);
+
+                Image.SetPixel(x, y, new RGBAColour<byte>(ToByte(fr), ToByte(fg), ToByte(fb), pixel.A));
+
+
+
             }
-        });
+        }
+
+        //{
+        //    Image.ProcessPixelRows(accessor =>
+        //    for (int y = 0; y < accessor.Height; y++)
+        //    {
+        //        Span<Rgba32> row = accessor.GetRowSpan(y);
+        //        for (int x = 0; x < row.Length; x++)
+        //        {
+//
+        //            Rgba32 src = row[x];
+        //            float maskFactor = 1f;
+        //            if (mask is not null)
+//
+        //                maskFactor = SrgbLuma01(mask[x, y]); // white=apply, black=skip
+        //            float t = opacity * maskFactor;
+        //            if (t <= 0f) continue;
+//
+//
+        //            // Work in 0..1
+        //            float sr = src.R / 255f;
+//
+        //            float sg = src.G / 255f;
+        //            float sb = src.B / 255f;
+        //            // Keep source shading
+        //            HSLColour srcHsl = ColourConverter.RGB_To_HSL(sr, sg, sb);
+//
+        //            float outL = ApplyLightnessShift(srcHsl.Luminance, lightnessShift);
+        //            // Replace hue/sat
+        //            var outHsl = new HSLColour(targetHue, targetSat, outL);
+//
+        //            // Convert back to RGB (0..1 floats in your Colour struct)
+        //            Colour outRgb = ColourConverter.HSL_To_RGB(outHsl);
+//
+//
+        //            // Blend in 0..1, then convert to bytes
+        //            float fr = Lerp(sr, outRgb.r, t);
+        //            float fg = Lerp(sg, outRgb.g, t);
+        //            float fb = Lerp(sb, outRgb.b, t);
+//
+        //            row[x] = new Rgba32(ToByte(fr), ToByte(fg), ToByte(fb), src.A);
+        //        }
+        //    }
+        //});
     }
 
     private static byte ToByte(float v)
@@ -111,7 +155,7 @@ public sealed class ImageEditor(Image<Rgba32> image)
     private static float Lerp(float a, float b, float t) => a + (b - a) * Clamp01(t);
     private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
     private static float Wrap01(float v) { v %= 1f; if (v < 0f) v += 1f; return v; }
-    private static float SrgbLuma01(Rgba32 c)
+    private static float SrgbLuma01(RGBAColour<byte> c)
     {
         // simple luma for masks (good enough for grayscale masks)
         float r = c.R / 255f;

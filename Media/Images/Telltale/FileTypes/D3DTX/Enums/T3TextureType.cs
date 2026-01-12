@@ -3,6 +3,7 @@
 // I can't find the original name but the enum names are correct.
 public enum T3TextureType
 {
+
     // Missing numbers - 4, 20, 21
     eTxUnknown = 0,
     eTxStandard = 15,
