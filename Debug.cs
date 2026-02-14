@@ -1,11 +1,27 @@
 using System;
 using System.Collections.Generic;
-using CSharpAlgorithms.Audio;
 
 namespace CSharpAlgorithms;
 
 public static class Debug
 {
+    public static void PrintArray<T>(T[] array)
+    {
+        string message = "";
+
+        message += "[\n";
+
+        for (int i = 0; i < array.Length; i++)
+        {
+            string elementMessage = $"{i}: {typeof(T)}, {array[i]}\n";
+            message += $"   {elementMessage}";
+        }
+
+        message += "]";
+
+        Console.WriteLine(message);
+    }
+
     public static void Print<TKey, TValue>(Dictionary<TKey, TValue> dictionary) where TKey : notnull
     {
         Console.WriteLine("{0,-15} {1,5}", "Key", "Value");
@@ -39,14 +55,14 @@ public static class Debug
 
     public static void Print(Exception ex)
     {
-        Console.WriteLine($"Exception Type: {ex.GetType()}");
-        Console.WriteLine($"Message: {ex.Message}");
-        Console.WriteLine($"Source: {ex.Source}");
-        Console.WriteLine($"StackTrace: {ex.StackTrace}");
-        Console.WriteLine($"TargetSite: {ex.TargetSite}");
-        if (ex.InnerException != null)
+        WriteErrorLine($"Exception Type: {ex.GetType()}");
+        WriteErrorLine($"Message: {ex.Message}");
+        WriteErrorLine($"Source: {ex.Source}");
+        WriteErrorLine($"StackTrace: {ex.StackTrace}");
+        WriteErrorLine($"TargetSite: {ex.TargetSite}");
+        if (ex.InnerException is not null)
         {
-            Console.WriteLine("Inner Exception:");
+            WriteErrorLine("Inner Exception:");
             Print(ex.InnerException);
         }
     }
@@ -68,9 +84,9 @@ public static class Debug
         Console.WriteLine(message);
     }
 
-    public static void WriteLine(int number, ConsoleColor colour = ConsoleColor.White) => WriteLine(number.ToString(), colour);
-
     public static void WriteErrorLine(string message) => WriteLine(message, ConsoleColor.Red);
+    public static void WriteWarning(string message) => WriteLine(message, ConsoleColor.Yellow);
+    public static void WriteSuccess(string message) => WriteLine(message, ConsoleColor.Green);
     public static void WriteLine(string message, ConsoleColor colour = ConsoleColor.White)
     {
         Console.ForegroundColor = colour;
@@ -78,5 +94,4 @@ public static class Debug
         Console.ResetColor();
     }
 
-    public static void WriteWarning(string message) => WriteLine(message, ConsoleColor.Yellow);
 }

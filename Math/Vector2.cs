@@ -326,7 +326,7 @@ public struct Vector2<T> : INumber<Vector2<T>>, IByteSize
         return new Vector2<T>(x, y);
     }
 
-    public static Vector2<T> operator -(Vector2<T> value) => new Vector2<T>(-value.X, -value.Y);
+    public static Vector2<T> operator -(Vector2<T> value) => new(-value.X, -value.Y);
     public static Vector2<T> operator -(Vector2<T> left, Vector2<T> right)
     {
         T x = left.X - right.X;

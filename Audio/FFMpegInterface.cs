@@ -3,56 +3,103 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CSharpAlgorithms.Audio;
 
 public static class FFMPegInterface
 {
-    public static void Resample(string path, int sampleRate)
+    public static async Task Resample(string inputPath, int sampleRate, int channelCount=2, CancellationToken ct = default)
     {
-        string tempPath = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "_temp.mp3");
+        if (string.IsNullOrWhiteSpace(inputPath))
+            throw new ArgumentException("Input path is required.", nameof(inputPath));
 
-        string arguments = $"-y -i \"{path}\" -ar {sampleRate} \"{tempPath}\"";
+        if (sampleRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sampleRate), "Sample rate must be > 0.");
 
-        var processInfo = new ProcessStartInfo
+        inputPath = Path.GetFullPath(inputPath);
+
+        if (!File.Exists(inputPath))
+            throw new FileNotFoundException("Input file not found.", inputPath);
+
+        string dir = Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory;
+        string tempPath = Path.Combine(dir,
+            $"{Path.GetFileNameWithoutExtension(inputPath)}_{Guid.NewGuid():N}.tmp.mp3");
+
+        try
         {
-            FileName = "ffmpeg",
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
+            // If you want to preserve quality more consistently, specify the encoder explicitly.
+            // -vn avoids copying any video stream if present.
+            string args = $"-y -hide_banner -vn -i \"{inputPath}\" -ac {channelCount} -ar {sampleRate} \"{tempPath}\"";
 
-        using (var process = Process.Start(processInfo))
-        {
-            string output = process.StandardError.ReadToEnd();
-            process.WaitForExit();
+            var psi = new ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                Arguments = args,
+                RedirectStandardError = true,
+                RedirectStandardOutput = false, // avoid deadlock by not piping stdout
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var process = new Process { StartInfo = psi };
+
+            if (!process.Start())
+                throw new InvalidOperationException("Failed to start ffmpeg process.");
+
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync(ct);
 
             if (process.ExitCode != 0)
+                throw new Exception($"FFmpeg failed (exit {process.ExitCode}):\n{stderr}");
+
+            // Safer replace with rollback
+            string backupPath = inputPath + ".bak";
+
+            // Move original out of the way first
+            if (File.Exists(backupPath))
+                File.Delete(backupPath);
+
+            File.Move(inputPath, backupPath, overwrite: true);
+
+            try
             {
-                throw new Exception($"FFmpeg failed:\n{output}");
+                File.Move(tempPath, inputPath, overwrite: true);
+                File.Delete(backupPath);
+            }
+            catch
+            {
+                // Restore original if replacing fails
+                if (File.Exists(inputPath))
+                    File.Delete(inputPath);
+
+                File.Move(backupPath, inputPath, overwrite: true);
+                throw;
             }
         }
-
-        // Replace original with temp file
-        string backupPath = path + ".bak";
-        File.Replace(tempPath, path, backupPath, ignoreMetadataErrors: true);
-
-        // Optionally, delete backup
-        File.Delete(backupPath);
+        finally
+        {
+            // Best-effort cleanup
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* ignore */ }
+            }
+        }
     }
 
-    public static async Task<AudioClip> Resample(AudioClip clip, int sampleRate)
+    public static async Task<AudioClip> Resample(AudioClip clip, int sampleRate, int channelCount=2)
     {
         FileInfo originalFile = new FileInfo(clip.OriginFilePath);
         string tempPath = Path.Combine(Path.GetDirectoryName(originalFile.FullName)!, Path.GetFileNameWithoutExtension(originalFile.FullName) + "_temp.mp3");
 
+        if (File.Exists(tempPath))
+            File.Delete(tempPath);
+
         File.Copy(clip.OriginFilePath, tempPath);
 
-        Resample(tempPath, sampleRate);
-        AudioClip resampledClip = await AudioClip.FromMP3File(tempPath);
+        await Resample(tempPath, sampleRate, channelCount);
+        AudioClip resampledClip = await AudioClip.FromMP3File(tempPath, sampleRate);
         File.Delete(tempPath);
         return resampledClip;
     }

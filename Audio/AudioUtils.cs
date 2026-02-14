@@ -11,21 +11,22 @@ public static class AudioUtils
 {
     public const double A4Note = 440.0;
 
-    /// <summary>
-    /// Gets index of device with name
-    /// </summary>
-    /// <param name="name">Name of device</param>
-    /// <returns>Index of device or -1 if none found</returns>
-    public static int GetDeviceIndex(string name)
+    public static int GetDeviceCount() => PortAudio.DeviceCount;
+
+    public static bool GetDeviceIndex(string name, out int deviceIndex)
     {
         DeviceInfo[] devices = GetDevices();
         for (int i = 0; i < devices.Length; i++)
         {
             if (devices[i].name == name)
-                return i;
+            {
+                deviceIndex = i;
+                return true;
+            }           
         }
 
-        return -1;
+        deviceIndex = -1;
+        return false;
     }
 
     public static DeviceInfo[] GetDevices()
@@ -39,7 +40,10 @@ public static class AudioUtils
         DeviceInfo[] devices = new DeviceInfo[count];
 
         for (int i = 0; i < count; i++)
+        {
             devices[i] = PortAudio.GetDeviceInfo(i);
+            Debug.WriteLine($"{i}: {devices[i].name}");
+        }
 
         return devices;
     }
@@ -50,70 +54,6 @@ public static class AudioUtils
         string[] names = devices.Select(d => d.name).ToArray();
 
         return names;
-    }
-    public static string[] GetInputDeviceNames()
-    {
-        List<string> names = new List<string>();
-        DeviceInfo[] devices = GetDevices();
-
-        for (int i = 0; i < devices.Length; i++)
-        {
-            DeviceInfo device = devices[i];
-
-            if (device.maxInputChannels > 0)
-                names.Add(device.name);
-        }
-
-        return [.. names];
-    }
-    public static string[] GetOutputDeviceNames()
-    {
-        List<string> names = new List<string>();
-        DeviceInfo[] devices = GetDevices();
-
-        for (int i = 0; i < devices.Length; i++)
-        {
-            DeviceInfo device = devices[i];
-
-            if (device.maxOutputChannels > 0)
-                names.Add(device.name);
-        }
-
-        return [.. names];
-    }
-
-    public static float[] MonoToStereo(float[] monoSamples)
-    {
-        float[] stereo = new float[monoSamples.Length * 2];
-        for (int i = 0; i < monoSamples.Length; i++)
-        {
-            stereo[i * 2] = monoSamples[i];     // Left
-            stereo[i * 2 + 1] = monoSamples[i]; // Right
-        }
-        return stereo;
-    }
-
-    public static string FormatDeviceNamesAsJSon()
-    {
-        var obj = new
-        {
-            inputDevices = GetInputDeviceNames(),
-            outputDevices = GetOutputDeviceNames()
-        };
-
-        string json = System.Text.Json.JsonSerializer.Serialize(obj);
-        return json;
-    }
-
-    public static string FormatAsJson(AudioDeviceData[] datas)
-    {
-        string json = System.Text.Json.JsonSerializer.Serialize(datas);
-        return json;
-    }
-
-    public static uint GetBufferSize(double seconds, uint sampleRate, ushort channelCount)
-    {
-        return (uint)(seconds * sampleRate * channelCount);
     }
 
     public static AudioFrame[] Resmaple(AudioFrame[] frames, byte channelCount)
@@ -145,7 +85,9 @@ public static class AudioUtils
 
     public static bool IsDeviceAvailable(string deviceName)
     {
-        int index = GetDeviceIndex(deviceName);
+        if (!GetDeviceIndex(deviceName, out int index))
+            return false;
+
         return IsDeviceAvailable(index);
     }
     public static bool IsDeviceAvailable(int deviceIndex)

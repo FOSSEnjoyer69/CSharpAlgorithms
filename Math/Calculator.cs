@@ -81,6 +81,36 @@ public static class Calculator
 
         return totals;
     }
+    
+    public static void AddNoNew<T>(params T[][] values) where T : struct, IAdditionOperators<T, T, T>
+    {
+        long length = ArrayUtils.GetLongestLength(values);
+        T[] totals = new T[length];
+
+        for (long i = 0; i < values.LongLength; i++)
+        {
+            T[] subArray = values[i];
+            for (long y = 0; y < subArray.LongLength; y++)
+            {
+                totals[y] += subArray[y];
+            }
+        }
+
+        for (long i = 0; i < values.LongLength; i++)
+        {
+            T[] subArray = values[i];
+            for (long y = 0; y < subArray.LongLength; y++)
+            {
+                subArray[y] = totals[y];
+            }
+        }
+    }
+
+    public static void MultiplyNoNew<T>(T[] values, T multiplier) where T : struct, IMultiplyOperators<T, T, T>
+    {
+        for (long i = 0; i < values.LongLength; i++)
+            values[i] *= multiplier;
+    }
 
     /// <summary>
     /// Sum of values of a data set divided by number of values

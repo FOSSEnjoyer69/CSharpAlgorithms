@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Buffers.Binary;
 using System.IO;
 using System.Threading.Tasks;
 using MP3Sharp;
@@ -37,51 +39,67 @@ public class AudioClip
                $"File Path: {OriginFilePath}\n"
                ;
     }
-
-    public static async Task<AudioClip> FromMP3File(string filePath, int? sampleRate = null)
+    
+    public static async Task<AudioClip> FromMP3File(string filePath, int sampleRate)
     {
+
         const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioClip.FromMP3File]";
 
         string fileName = Path.GetFileName(filePath);
 
-        using var mp3Stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+        using var mp3Stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var mp3 = new MP3Stream(mp3Stream);
 
-        int inputSampleRate = mp3.Frequency;
-        int finalRate = sampleRate ?? inputSampleRate;
+        int inputRate = mp3.Frequency;
+        int targetRate = sampleRate; // <-- choose your intended semantics
         short channelCount = mp3.ChannelCount;
 
         using var memoryStream = new MemoryStream();
-        byte[] buffer = new byte[4096];
-        int bytesRead;
-
-        // Important: use synchronous Read, because MP3Sharp decodes here
-        while ((bytesRead = mp3.Read(buffer, 0, buffer.Length)) > 0)
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        try
         {
-            memoryStream.Write(buffer, 0, bytesRead);
+            int bytesRead;
+            while ((bytesRead = mp3.Read(buffer, 0, buffer.Length)) > 0)
+                memoryStream.Write(buffer, 0, bytesRead);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        byte[] pcmData = memoryStream.ToArray();
-        int sampleCount = pcmData.Length / 2;
+        // Avoid ToArray() copy
+        if (!memoryStream.TryGetBuffer(out ArraySegment<byte> seg))
+            seg = new ArraySegment<byte>(memoryStream.ToArray());
+
+        // Convert PCM16LE -> float
+        int byteLen = (int)memoryStream.Length;
+        int sampleCount = byteLen / 2; // includes all channels (interleaved)
         float[] samples = new float[sampleCount];
 
-        for (int i = 0; i < sampleCount; i++)
+        ReadOnlySpan<byte> pcmBytes = seg.AsSpan(0, byteLen);
+
+        // If you ever run on big-endian (rare), this keeps it correct:
+        for (int i = 0, bi = 0; i < sampleCount; i++, bi += 2)
         {
-            short sample = BitConverter.ToInt16(pcmData, i * 2);
-            samples[i] = sample / 32768f;
+            short s = BinaryPrimitives.ReadInt16LittleEndian(pcmBytes.Slice(bi, 2));
+            samples[i] = s * (1f / 32768f);
         }
 
+        // Build clip at the TRUE rate of decoded data first
         AudioFrameCollection frames = new(samples: samples, channelCount: (uint)channelCount);
-        AudioClip clip = new(fileName, frames, finalRate, channelCount)
+        AudioClip clip = new(fileName, frames, inputRate, channelCount)
         {
             OriginFilePath = filePath
         };
 
-        if (finalRate != AudioSettings.SampleRate)
-            clip = await FFMPegInterface.Resample(clip, (int)AudioSettings.SampleRate);
+        // Now resample only if needed, and to the rate you actually want
+        if (targetRate != inputRate)
+        {
+            clip = await FFMPegInterface.Resample(clip, targetRate).ConfigureAwait(false);
+            clip.OriginFilePath = filePath; // in case resample returns a new instance
+        }
 
-        Console.WriteLine($"{CALL_PATH} loaded {clip}");
-
+        Console.WriteLine($"{CALL_PATH} loaded {clip.Name} from {filePath}");
         return clip;
     }
 

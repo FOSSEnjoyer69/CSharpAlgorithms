@@ -6,6 +6,10 @@ namespace CSharpAlgorithms;
 
 public static class Text
 {
+    public const string PLAY_SYMBOL = "▶";
+    public const string PAUSE_SYMBOL = "⏸";
+    public const string STOP_SYMBOL = "■";
+
     public static string ReadNullTerminatedString(BinaryReader reader)
     {
         List<byte> bytes = new();

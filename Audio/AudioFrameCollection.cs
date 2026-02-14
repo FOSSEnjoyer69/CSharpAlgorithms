@@ -158,13 +158,13 @@ public class AudioFrameCollection
 
         foreach (AudioFrame frame in frames)
         {
+            if (!frame.IsMono)
+                continue;
+
             float[] steroSamples = new float[2];
-            if (frame.IsMono)
-            {
-                float sample = frame.Samples.First();
-                steroSamples[0] = sample;
-                steroSamples[1] = sample;
-            }
+            float sample = frame.Samples.First();
+            steroSamples[0] = sample;
+            steroSamples[1] = sample;
 
             frame.Samples = steroSamples;
         }
