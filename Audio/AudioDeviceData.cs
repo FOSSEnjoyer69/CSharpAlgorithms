@@ -1,15 +1,18 @@
+#define DEBUG
+
 using System;
 using System.Linq;
 using CSharpAlgorithms.Collection;
+
 
 namespace CSharpAlgorithms.Audio;
 
 public readonly struct AudioDeviceData
 {
-    public readonly string Name;
-    public readonly bool HasInput, HasOutput;
-    public readonly float InputVolume, OutputVolume;
-    public readonly bool IsMuted;
+    public readonly string Name {get; init;}
+    public readonly float InputVolume {get; init;}
+    public readonly float OutputVolume {get; init;}
+    public readonly bool IsMuted {get; init;}
 
     public const string DEFAULT_FILE_PATH = "devices.json";
 
@@ -33,11 +36,19 @@ public readonly struct AudioDeviceData
 
     public static void Save(string filePath = DEFAULT_FILE_PATH, AudioDeviceData[] deviceDatas= null!)
     {
-        deviceDatas ??= Get();
+        if (deviceDatas is null)
+        {
+            if (!Get(null!, out deviceDatas))
+                return;
+        }
 
         string json = System.Text.Json.JsonSerializer.Serialize(deviceDatas, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
         System.IO.File.WriteAllText(filePath, json);
-        Console.WriteLine($"Saved audio devices to {filePath}");
+
+#if DEBUG
+        Debug.WriteLine($"Saved to {filePath}");
+        Debug.WriteLine(json);
+#endif
     }
 
     public static AudioDeviceData[] Load(string filePath = DEFAULT_FILE_PATH)
@@ -53,9 +64,10 @@ public readonly struct AudioDeviceData
         return deviceDatas;
     }
 
-    public static AudioDeviceData[] Get(AudioDevice[] devices = null!)
+    public static bool Get(AudioDevice[] devices, out AudioDeviceData[] deviceDatas)
     {
         devices ??= DictionaryUtils.GetValues(AudioDevice.ActiveDevices);
-        return [.. devices.Select(device => new AudioDeviceData(device))];
+        deviceDatas = [.. devices.Select(device => new AudioDeviceData(device))];
+        return true;
     }
 }

@@ -56,15 +56,18 @@ public static class Debug
     public static void Print(Exception ex)
     {
         WriteErrorLine($"Exception Type: {ex.GetType()}");
-        WriteErrorLine($"Message: {ex.Message}");
-        WriteErrorLine($"Source: {ex.Source}");
         WriteErrorLine($"StackTrace: {ex.StackTrace}");
+        WriteErrorLine($"Source: {ex.Source}");
+        WriteErrorLine($"Message: {ex.Message}");
         WriteErrorLine($"TargetSite: {ex.TargetSite}");
         if (ex.InnerException is not null)
         {
             WriteErrorLine("Inner Exception:");
             Print(ex.InnerException);
         }
+        WriteErrorLine($"HResult: {ex.HResult}");
+        WriteErrorLine($"Data: {ex.Data}");
+        WriteErrorLine($"HelpLink: {ex.HelpLink}");
     }
 
     public static void Print<T>(T[] array)
@@ -87,6 +90,8 @@ public static class Debug
     public static void WriteErrorLine(string message) => WriteLine(message, ConsoleColor.Red);
     public static void WriteWarning(string message) => WriteLine(message, ConsoleColor.Yellow);
     public static void WriteSuccess(string message) => WriteLine(message, ConsoleColor.Green);
+
+    public static void WriteLine(int number, ConsoleColor colour = ConsoleColor.White) => WriteLine(number.ToString(), colour);
     public static void WriteLine(string message, ConsoleColor colour = ConsoleColor.White)
     {
         Console.ForegroundColor = colour;

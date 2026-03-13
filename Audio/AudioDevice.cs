@@ -1,12 +1,8 @@
-#pragma warning disable
-//#define DEBUG_MODE
-
 using PortAudioSharp;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using AudioStream = PortAudioSharp.Stream;
 using CSharpAlgorithms.Collection;
@@ -22,15 +18,19 @@ public class AudioDevice : IMute, IDisposable
     public int DeviceIndex { get; private set; }
     public DeviceInfo Info { get; private set; }
     public bool IsMuted { get; set; } = false;
-    public bool IsInputMuted, IsOutputMuted, IsPlayingInput;
+    public bool IsInputMuted, IsOutputMuted;
+    public bool MonitorOwnInput;
     public int InputChannelCount { get; private set; }
     public int OutputChannelCount { get; private set; }
+
+    public bool HasInput => InputChannelCount > 0;
+    public bool HasOutput => OutputChannelCount > 0;
 
     public float InputVolume { get; private set; } = 1;
     public float OutputVolume { get; private set; } = 1;
 
-    private List<BlockingCollection<AudioFrameCollection>> inputBuffers = [];
-    private List<BlockingCollection<AudioFrameCollection>> outputBuffers = [];
+    protected Dictionary<string, BlockingCollection<AudioFrameCollection>> inputBuffers = [];
+    protected Dictionary<string, BlockingCollection<AudioFrameCollection>> outputBuffers = [];
 
     public List<AudioPlayer> audioPlayers = [];
 
@@ -38,29 +38,11 @@ public class AudioDevice : IMute, IDisposable
 
     public static Dictionary<string, AudioDevice> ActiveDevices { get; protected set; } = [];
 
-    private AudioDevice(){}
+    float[] inputMonitorBuffer = null!,
+            inputSamplesBuffer = null!, 
+            outputSamplesBuffer = null!;
 
-    /// <summary>
-    /// Gets a blocking buffer that this deivce will write audio frames into and consumers can read from.
-    /// </summary>
-    /// <returns></returns>
-    public BlockingCollection<AudioFrameCollection> GetInputBuffer()
-    {
-        BlockingCollection<AudioFrameCollection> buffer = new BlockingCollection<AudioFrameCollection>(2);
-        inputBuffers.Add(buffer);
-        return buffer;
-    }
-
-    /// <summary>
-    /// Gets a blocking buffer that this device reads audio frames from to write to the output.
-    /// </summary>
-    /// <returns></returns>
-    public BlockingCollection<AudioFrameCollection> GetOutputBuffer()
-    {
-        BlockingCollection<AudioFrameCollection> buffer = new BlockingCollection<AudioFrameCollection>(2);
-        outputBuffers.Add(buffer);
-        return buffer;
-    }
+    private AudioDevice() { }
 
     public bool SetDevice(string deviceName)
     {
@@ -71,7 +53,7 @@ public class AudioDevice : IMute, IDisposable
         }
 
         return SetDevice(deviceIndex);
-    }         
+    }
     public bool SetDevice(int deviceIndex)
     {
         const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioDevice.SetDevice]";
@@ -82,7 +64,7 @@ public class AudioDevice : IMute, IDisposable
             return false;
         }
 
-        PortAudio.Initialize();
+        AudioUtils.Init();
 
         try
         {
@@ -104,7 +86,7 @@ public class AudioDevice : IMute, IDisposable
                     sampleFormat = SampleFormat.Float32,
                     suggestedLatency = Info.defaultLowInputLatency,
                     hostApiSpecificStreamInfo = IntPtr.Zero
-                };  
+                };
             }
 
             if (OutputChannelCount > 0)
@@ -116,24 +98,26 @@ public class AudioDevice : IMute, IDisposable
                     sampleFormat = SampleFormat.Float32,
                     suggestedLatency = Info.defaultLowOutputLatency,
                     hostApiSpecificStreamInfo = IntPtr.Zero
-                };  
+                };
+            }
+
+            if (previousStream is not null)
+            {
+                if (previousStream.IsActive)
+                    previousStream.Stop();
+
+                previousStream.Dispose();
             }
 
             stream = new AudioStream(
                 inParams: inStreamParameters,
                 outParams: outStreamParameters,
                 sampleRate: Info.defaultSampleRate,
-                framesPerBuffer: 0,
+                framesPerBuffer: 64,
                 streamFlags: StreamFlags.ClipOff,
                 callback: Callback,
                 userData: IntPtr.Zero
             );
-
-            if (previousStream is not null)
-            {
-                previousStream.Stop();
-                previousStream.Dispose();
-            }
 
             stream.Start();
 
@@ -148,6 +132,8 @@ public class AudioDevice : IMute, IDisposable
             Debug.Print(ex);
             return false;
         }
+
+
     }
 
     public bool SetInputVolume(float volume)
@@ -177,66 +163,78 @@ public class AudioDevice : IMute, IDisposable
     private StreamCallbackResult Callback(IntPtr input, IntPtr output, uint frameCount, ref StreamCallbackTimeInfo timeInfo, StreamCallbackFlags statusFlags, IntPtr userData)
     {
         const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioOutputDevice.Callback]";
-#if DEBUG_MODE
-        Console.WriteLine($"{CALL_PATH}: {this}");
-        Console.WriteLine($"{CALL_PATH} ({Info.name}) Callback called");
-#endif
-        uint outputSampleCount = (frameCount * (uint)OutputChannelCount);
 
-        float[] outputBuffer = new float[outputSampleCount];
+        // Console.WriteLine($"{CALL_PATH}: {this}");
+        // Console.WriteLine($"{CALL_PATH} ({Info.name}) Callback called");
+        uint outputSampleCount = frameCount * (uint)OutputChannelCount;
+        outputSamplesBuffer = new float[outputSampleCount];
 
-        AudioFrameCollection outputFrames = new AudioFrameCollection(channelCount: OutputChannelCount, (int)frameCount);
+        AudioFrameCollection outputFrames = new(channelCount: OutputChannelCount, (int)frameCount);
 
-        if (!IsInputMuted && input != IntPtr.Zero)
+        if (input != IntPtr.Zero)
         {
-            uint inputSampleCount = (frameCount * (uint)InputChannelCount);
-            float[] inputSamplesBuffer = new float[inputSampleCount];
-            Marshal.Copy(input, inputSamplesBuffer, 0, (int)inputSampleCount);
+            if (InputChannelCount > 0 && !IsInputMuted)
+            {
+                uint inputSampleCount = frameCount * (uint)InputChannelCount;
+                inputSamplesBuffer = new float[inputSampleCount];
+                Marshal.Copy(input, inputSamplesBuffer, 0, (int)inputSampleCount);
 
-            Calculator.MultiplyNoNew(inputSamplesBuffer, InputVolume);
+                Calculator.MultiplyNoNew(inputSamplesBuffer, InputVolume);
 
-            AudioFrameCollection inputFrames = new AudioFrameCollection(inputSamplesBuffer, (uint)InputChannelCount);
-            if (InputChannelCount == 1 && OutputChannelCount == 2)
-                inputFrames.ToStereo();
+                AudioFrameCollection inputFrames = new(inputSamplesBuffer, (uint)InputChannelCount);
+                if (InputChannelCount == 1 && OutputChannelCount == 2)
+                    inputFrames.ToStereo();
 
-            inputBuffers.ForEach(buffer => buffer.Add(inputFrames));
+                if (MonitorOwnInput)
+                    inputMonitorBuffer = inputFrames.GetSamples();
 
-            if (IsPlayingInput)
-                outputFrames.Add(inputFrames);
+                foreach (var buffer in inputBuffers.Values)
+                    buffer.Add(inputFrames);
+            }
         }
 
-        foreach (AudioPlayer player in audioPlayers)
+        if (output != IntPtr.Zero)
         {
-            if (!player.IsPlaying)
-                continue;
-
-            if (IsOutputMuted)
+            foreach (AudioPlayer player in audioPlayers)
             {
-                player.StepForward((int)frameCount);
-                continue;
+                if (!player.IsPlaying)
+                    continue;
+
+                if (IsOutputMuted)
+                {
+                    player.StepForward((int)frameCount);
+                    continue;
+                }
+
+                if (player.TryGetFrames(frameCount, out AudioFrameCollection playerFrames))
+                    outputFrames.Add(playerFrames);
             }
 
-            if (player.TryGetFrames(frameCount, out AudioFrameCollection playerFrames))
-                outputFrames.Add(playerFrames);
+            foreach (var bufferDicItem in outputBuffers)
+            {
+                BlockingCollection<AudioFrameCollection> buffer = bufferDicItem.Value;
+
+                if (buffer.TryTake(out AudioFrameCollection frameCollection) && !IsOutputMuted)
+                {
+                    frameCollection.ToStereo();
+                    outputFrames.Add(frameCollection);
+
+                }
+                else
+                    Debug.WriteWarning($"{CALL_PATH} {bufferDicItem.Key} Output buffer for device {Info.name} is empty");
+            }
+
+            if (inputMonitorBuffer is not null && MonitorOwnInput && !IsOutputMuted)
+                Calculator.AddNoNew(outputSamplesBuffer, inputMonitorBuffer);
+                
+            Calculator.AddNoNew(outputSamplesBuffer, outputFrames.GetSamples());
+
+            Calculator.MultiplyNoNew(outputSamplesBuffer, OutputVolume);
+
+            Marshal.Copy(outputSamplesBuffer, 0, output, outputSamplesBuffer.Length);
         }
 
-        foreach (var buffer in outputBuffers)
-        {
-            if (buffer.TryTake(out AudioFrameCollection frameCollection))
-                outputFrames.Add(frameCollection);
-        }
-
-        Calculator.AddNoNew(outputBuffer, outputFrames.GetSamples());
-        Calculator.MultiplyNoNew(outputBuffer, OutputVolume);
-
-
-        return SendBuffer();
-
-        StreamCallbackResult SendBuffer()
-        {
-            Marshal.Copy(outputBuffer, 0, output, outputBuffer.Length);
-            return StreamCallbackResult.Continue;
-        }
+        return StreamCallbackResult.Continue;
     }
 
     public override string ToString()
@@ -247,7 +245,7 @@ public class AudioDevice : IMute, IDisposable
         IsMuted: {IsMuted}
         IsInputMuted: {IsInputMuted}
         IsOutputMuted: {IsOutputMuted}
-        IsPlayingInput: {IsPlayingInput}
+        MonitorOwnInput: {MonitorOwnInput}
         """;
     }
 
@@ -255,8 +253,8 @@ public class AudioDevice : IMute, IDisposable
     {
         stream?.Stop();
         stream?.Dispose();
-    } 
-        
+    }
+
 
     public static bool GetDevice(string name, out AudioDevice device)
     {
@@ -303,5 +301,73 @@ public class AudioDevice : IMute, IDisposable
 
         name = null;
         return false;
-    } 
+    }
+
+    public static AudioDevice[] GetOtherActiveDevices(AudioDevice device)
+    {
+        return DictionaryUtils.GetValues(ActiveDevices).Where(d => d != device).ToArray();
+    }
+
+    public static bool LoadDevicesFromFile(string filePath = "")
+    {
+        AudioDeviceData[] deviceDatas = AudioDeviceData.Load(filePath);
+        foreach (AudioDeviceData deviceData in deviceDatas)
+        {
+            if (!GetDevice(deviceData.Name, out AudioDevice device))
+                continue;
+
+            device.SetInputVolume(deviceData.InputVolume);
+            device.SetOutputVolume(deviceData.OutputVolume);
+            device.IsMuted = deviceData.IsMuted;
+        }
+
+        return true;
+    }
+
+    public static bool ConnectDevices(AudioDevice source, AudioDevice destination)
+    {
+        if (source is null || destination is null)
+        {
+#if true
+            if (source is null && destination is null)
+                Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Both source and destination devices are null");
+            else if (source is null)
+                Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Source device is null");
+            else
+                Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Destination device is null");
+#endif
+
+            return false;
+        }
+
+        if (source == destination)
+        {
+#if true
+            Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Source and destination devices are the same");
+#endif
+            return false;
+        }
+
+        BlockingCollection<AudioFrameCollection> buffer = new BlockingCollection<AudioFrameCollection>(boundedCapacity: 64);
+        source.inputBuffers[destination.Info.name] = buffer;
+        destination.outputBuffers[source.Info.name] = buffer;
+
+        Debug.WriteSuccess($"[AudioDevice.ConnectDevices] Created a connection between source device '{source.Info.name}' and destination device '{destination.Info.name}'");
+
+        return true;
+    }
+
+    public static void DisconnectDevices(AudioDevice source, AudioDevice destination)
+    {
+        if (source is null || destination is null)
+        {
+            return;
+        }
+
+        if (source == destination)
+            return;
+
+        source.inputBuffers.Remove(destination.Info.name);
+        destination.outputBuffers.Remove(source.Info.name);
+    }
 }

@@ -102,8 +102,11 @@ public class AudioFrameCollection
     }
     public void SetSamples(float[] samples, uint channelCount)
     {
-        if (samples is null || samples.Length == 0 || channelCount <= 0)
-            throw new ArgumentException("Invalid samples or channel count.");
+        if (channelCount == 0)
+            throw new ArgumentException("Channel count must be greater than zero.");
+
+        if (samples is null || samples.Length == 0)
+            throw new ArgumentException("Invalid samples.");
 
         if (samples.Length % channelCount != 0)
             throw new Exception("Warning: sample count not divisible by channel count.");
@@ -144,10 +147,8 @@ public class AudioFrameCollection
 
         for (int i = 0; i < minLength; i++)
         {
-            AudioFrame frame = frames[i];
             AudioFrame additionFrame = additionFrames[i];
-
-            frame.AddSamples(additionFrame);
+            frames[i].AddSamples(additionFrame);
         }
     }
 

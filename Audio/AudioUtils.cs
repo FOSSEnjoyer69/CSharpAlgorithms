@@ -1,6 +1,6 @@
+//#define DEBUG
+
 using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using CSharpAlgorithms.Collection;
 using PortAudioSharp;
@@ -11,7 +11,40 @@ public static class AudioUtils
 {
     public const double A4Note = 440.0;
 
-    public static int GetDeviceCount() => PortAudio.DeviceCount;
+    public static bool IsInitialized { get; private set; } = false;
+
+    /// <summary>
+    /// Initializes the PortAudio library. This method should be called before using any other audio functions.
+    /// </summary>
+    /// <returns>True if initialization was successful or is is already initialized, false otherwise</returns>
+    public static bool Init()
+    {
+        if (IsInitialized)
+            return true;
+
+        try
+        {
+            PortAudio.Initialize();
+
+            AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+            {
+                if (IsInitialized)
+                {
+                    PortAudio.Terminate();
+                    IsInitialized = false;
+                }
+            };
+
+            IsInitialized = true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteErrorLine($"Error initializing Audio: {ex.Message}");
+            IsInitialized = false;
+            return false;
+        }
+    }
 
     public static bool GetDeviceIndex(string name, out int deviceIndex)
     {
@@ -31,7 +64,7 @@ public static class AudioUtils
 
     public static DeviceInfo[] GetDevices()
     {
-        PortAudio.Initialize();
+        Init();
 
         int count = PortAudio.DeviceCount;
         if (count < 1)
@@ -40,10 +73,7 @@ public static class AudioUtils
         DeviceInfo[] devices = new DeviceInfo[count];
 
         for (int i = 0; i < count; i++)
-        {
             devices[i] = PortAudio.GetDeviceInfo(i);
-            Debug.WriteLine($"{i}: {devices[i].name}");
-        }
 
         return devices;
     }
@@ -54,18 +84,6 @@ public static class AudioUtils
         string[] names = devices.Select(d => d.name).ToArray();
 
         return names;
-    }
-
-    public static AudioFrame[] Resmaple(AudioFrame[] frames, byte channelCount)
-    {
-        byte originalChannel = (byte)frames.First().Samples.Length;
-
-        if (originalChannel == 1 && channelCount == 2)
-        {
-            return ResampleMonoToStereo(frames);
-        }
-
-        return [];
     }
 
     public static AudioFrame[] ResampleMonoToStereo(AudioFrame[] frames)
@@ -92,6 +110,8 @@ public static class AudioUtils
     }
     public static bool IsDeviceAvailable(int deviceIndex)
     {
+        Init();
+
         int count = PortAudio.DeviceCount;
         return deviceIndex >= 0 && deviceIndex < count;
     }

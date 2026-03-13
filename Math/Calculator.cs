@@ -65,6 +65,15 @@ public static class Calculator
 
         return total;
     }
+    public static T Sum<T>(IEnumerable<T> values) where T : struct, INumber<T>
+    {
+        T total = T.Zero;
+
+        foreach (T value in values)
+            total += value;
+
+        return total;
+    }
     public static T[] Add<T>(params T[][] values) where T : struct, IAdditionOperators<T, T, T>
     {
         long length = ArrayUtils.GetLongestLength(values);

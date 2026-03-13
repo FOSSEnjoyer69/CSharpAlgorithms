@@ -98,6 +98,9 @@ public class AudioPlayer : IPlay, IPause, IIsPlaying, IAudioProvider
 
     public void StepForward(int frameCount)
     {
+        if (!IsPlaying)
+            return;
+            
         Position = Calculator.Min(Position + frameCount, clip.Length);
     }
 }
