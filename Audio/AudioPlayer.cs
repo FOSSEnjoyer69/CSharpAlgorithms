@@ -2,25 +2,83 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using CSharpAlgorithms.Interfaces;
 using CSharpAlgorithms.Math;
 
 namespace CSharpAlgorithms.Audio;
 
-public class AudioPlayer : IPlay, IPause, IIsPlaying, IAudioProvider
+public class AudioPlayer : IPlay, IPause, IIsPlaying, IAudioProvider, INotifyPropertyChanged
 {
-    public AudioClip clip;
+    public event PropertyChangedEventHandler? PropertyChanged;
+    
+    private AudioClip m_clip;
+    public AudioClip clip
+    {
+        get => m_clip;
+        set
+        {
+            if (ReferenceEquals(m_clip, value))
+                return;
 
-    public int Position { get; set; } = 0;
+            m_clip = value;
+            OnPropertyChanged();
+        }
+    }
 
-    public bool IsPlaying { get; private set; } = false;
-    public bool IsFinished => Position >= clip.Length;
-    public bool Loop { get; set; } = false;
+    private int m_position;
+    public int Position
+    {
+        get => m_position;
+        set
+        {
+            if (m_position == value)
+                return;
+            
+            m_position = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private bool m_isPlaying;
+    public bool IsPlaying
+    {
+        get => m_isPlaying;
+        set
+        {
+            if (m_isPlaying == value)
+                return;
+
+            m_isPlaying = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private bool m_loop;
+    public bool Loop
+    {
+        get => m_loop;
+        set
+        {
+            if (m_loop == value)
+                return;
+
+            m_loop = value;
+            OnPropertyChanged();
+        }
+    }
+
     public event Action<string> OnStateChanged;
-
+    
     public AudioPlayer(AudioClip clip)
     {
         this.clip = clip;
+    }
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     public void Play()
@@ -32,6 +90,13 @@ public class AudioPlayer : IPlay, IPause, IIsPlaying, IAudioProvider
     {
         IsPlaying = false;
         OnStateChanged?.Invoke("pause");
+    }
+
+    public void Stop()
+    {
+        IsPlaying = false;
+        Position = 0;
+        OnStateChanged?.Invoke("stop");
     }
 
     public AudioFrameCollection GetFrames(uint frameCount)
@@ -47,7 +112,7 @@ public class AudioPlayer : IPlay, IPause, IIsPlaying, IAudioProvider
             if (!Loop)
             {
                 IsPlaying = false;
-                OnStateChanged?.Invoke("end");
+                OnStateChanged?.Invoke("stop");
                 return new AudioFrameCollection();
             }
         }
@@ -74,10 +139,7 @@ public class AudioPlayer : IPlay, IPause, IIsPlaying, IAudioProvider
         {
             Position = 0;
             if (!Loop)
-            {
-                IsPlaying = false;
-                OnStateChanged?.Invoke("end");
-            }
+                Stop();
 
             frames = null;
             return false;
