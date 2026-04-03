@@ -91,6 +91,7 @@ public static class Debug
     public static void WriteWarning(string message) => WriteLine(message, ConsoleColor.Yellow);
     public static void WriteSuccess(string message) => WriteLine(message, ConsoleColor.Green);
 
+    public static void WriteLine(double number, ConsoleColor colour = ConsoleColor.White) => WriteLine(number.ToString(), colour);
     public static void WriteLine(int number, ConsoleColor colour = ConsoleColor.White) => WriteLine(number.ToString(), colour);
     public static void WriteLine(string message, ConsoleColor colour = ConsoleColor.White)
     {

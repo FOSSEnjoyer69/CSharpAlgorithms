@@ -207,7 +207,12 @@ public class AudioDevice : IMute, IDisposable
                 }
 
                 if (player.TryGetFrames(frameCount, out AudioFrameCollection playerFrames))
+                {
+                    if (OutputChannelCount == 2 && playerFrames.ChannelCount == 1)
+                        playerFrames.ToStereo();
+                    
                     outputFrames.Add(playerFrames);
+                }
             }
 
             foreach (var bufferDicItem in outputBuffers)

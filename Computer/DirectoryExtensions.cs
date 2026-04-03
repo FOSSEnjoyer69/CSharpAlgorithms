@@ -37,4 +37,9 @@ public static class DirectoryUtils
         }
         return true;
     }
+
+    public static bool IsTheSameDirectory(DirectoryInfo dir1, DirectoryInfo dir2)
+    {
+        return string.Equals(dir1.FullName.TrimEnd(Path.DirectorySeparatorChar), dir2.FullName.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+    }
 }

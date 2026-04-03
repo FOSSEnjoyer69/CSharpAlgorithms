@@ -40,19 +40,20 @@ public class AudioClip
                ;
     }
     
-    public static async Task<AudioClip> FromMP3File(string filePath, int sampleRate)
+    public static async Task<AudioClip> FromMP3File(string filePath, double sampleRate, short? channelCountOverride = null) =>  await FromMP3File(filePath, (int)sampleRate, channelCountOverride);
+    public static async Task<AudioClip> FromMP3File(string filePath, int sampleRate, short? channelCountOverride = null)
     {
-
         const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioClip.FromMP3File]";
 
         string fileName = Path.GetFileName(filePath);
+        Console.WriteLine($"{CALL_PATH} loading {fileName} from {filePath} at sample rate {sampleRate}");
 
         using var mp3Stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         using var mp3 = new MP3Stream(mp3Stream);
 
         int inputRate = mp3.Frequency;
         int targetRate = sampleRate; // <-- choose your intended semantics
-        short channelCount = mp3.ChannelCount;
+        short channelCount = channelCountOverride ?? mp3.ChannelCount;
 
         using var memoryStream = new MemoryStream();
         byte[] buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
@@ -93,9 +94,9 @@ public class AudioClip
         };
 
         // Now resample only if needed, and to the rate you actually want
-        if (targetRate != inputRate)
+        if (targetRate != inputRate || channelCountOverride is not null && channelCountOverride.HasValue)
         {
-            clip = await FFMPegInterface.Resample(clip, targetRate).ConfigureAwait(false);
+            clip = await FFMPegInterface.Resample(clip, targetRate, channelCountOverride.Value).ConfigureAwait(false);
             clip.OriginFilePath = filePath; // in case resample returns a new instance
         }
 
