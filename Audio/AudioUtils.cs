@@ -9,8 +9,6 @@ namespace CSharpAlgorithms.Audio;
 
 public static class AudioUtils
 {
-    public const double A4Note = 440.0;
-
     public static bool IsInitialized { get; private set; } = false;
 
     /// <summary>

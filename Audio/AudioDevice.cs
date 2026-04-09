@@ -1,3 +1,5 @@
+#define USE_SOUND_FLOW
+
 using PortAudioSharp;
 using System;
 using System.Collections.Concurrent;
@@ -13,7 +15,7 @@ namespace CSharpAlgorithms.Audio;
 /// <summary>
 /// Represents an audio device that can be used for input and/or output. Allows reading from input buffers and writing to output buffers, as well as playing audio through the device using AudioPlayer instances. Manages an underlying PortAudio stream and handles audio processing in a callback function.
 /// </summary>
-public class AudioDevice : IMute, IDisposable
+public sealed class AudioDevice : IMute, IDisposable
 {
     public int DeviceIndex { get; private set; }
     public DeviceInfo Info { get; private set; }
@@ -69,6 +71,7 @@ public class AudioDevice : IMute, IDisposable
         try
         {
             AudioStream previousStream = stream;
+            DeviceInfo previousInfo = Info;
 
             Info = PortAudio.GetDeviceInfo(deviceIndex);
             Debug.PrintObject(Info);
@@ -123,17 +126,33 @@ public class AudioDevice : IMute, IDisposable
 
             DeviceIndex = deviceIndex;
 
+            foreach (KeyValuePair<string, BlockingCollection<AudioFrameCollection>> item in inputBuffers)
+            {
+                if (item.Key == previousInfo.name)
+                {
+                    outputBuffers[item.Key] = item.Value;
+                    inputBuffers.Remove(item.Key);
+                }
+            }
+
+            foreach (KeyValuePair<string, BlockingCollection<AudioFrameCollection>> item in outputBuffers)
+            {
+                if (item.Key == previousInfo.name)                
+                {
+                    inputBuffers[item.Key] = item.Value;
+                    outputBuffers.Remove(item.Key);
+                }
+            }
+
             Debug.WriteSuccess($"{CALL_PATH} Set audio device to {Info.name} at index {deviceIndex}");
             return true;
         }
         catch (System.Exception ex)
         {
-            Debug.WriteErrorLine($"{CALL_PATH} Failed to set audio device to index {deviceIndex}");
+            Debug.WriteErrorLine($"{CALL_PATH} Failed to set audio device to index '{deviceIndex}' with name '{Info.name}'");
             Debug.Print(ex);
             return false;
         }
-
-
     }
 
     public bool SetInputVolume(float volume)
@@ -164,8 +183,6 @@ public class AudioDevice : IMute, IDisposable
     {
         const string CALL_PATH = "[CSharpAlgorithms.Audio.AudioOutputDevice.Callback]";
 
-        // Console.WriteLine($"{CALL_PATH}: {this}");
-        // Console.WriteLine($"{CALL_PATH} ({Info.name}) Callback called");
         uint outputSampleCount = frameCount * (uint)OutputChannelCount;
         outputSamplesBuffer = new float[outputSampleCount];
 
@@ -197,9 +214,6 @@ public class AudioDevice : IMute, IDisposable
         {
             foreach (AudioPlayer player in audioPlayers)
             {
-                if (!player.IsPlaying)
-                    continue;
-
                 if (IsOutputMuted)
                 {
                     player.StepForward((int)frameCount);
@@ -219,8 +233,11 @@ public class AudioDevice : IMute, IDisposable
             {
                 BlockingCollection<AudioFrameCollection> buffer = bufferDicItem.Value;
 
-                if (buffer.TryTake(out AudioFrameCollection frameCollection) && !IsOutputMuted)
+                if (buffer.TryTake(out AudioFrameCollection frameCollection))
                 {
+                    if (IsOutputMuted)
+                        continue;
+
                     frameCollection.ToStereo();
                     outputFrames.Add(frameCollection);
 
@@ -233,7 +250,6 @@ public class AudioDevice : IMute, IDisposable
                 Calculator.AddNoNew(outputSamplesBuffer, inputMonitorBuffer);
                 
             Calculator.AddNoNew(outputSamplesBuffer, outputFrames.GetSamples());
-
             Calculator.MultiplyNoNew(outputSamplesBuffer, OutputVolume);
 
             Marshal.Copy(outputSamplesBuffer, 0, output, outputSamplesBuffer.Length);

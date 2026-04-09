@@ -1,4 +1,5 @@
 #define USE_AVALONIA_UI
+#define USE_SOUND_FLOW
 
 using System;
 using System.Collections.Generic;
@@ -11,33 +12,60 @@ using System.Threading.Tasks;
 #if USE_AVALONIA_UI
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using SoundFlow.Abstracts.Devices;
+using SoundFlow.Backends.MiniAudio;
+using SoundFlow.Components;
+using SoundFlow.Providers;
+using SoundFlow.Structs;
 #endif
 
 namespace CSharpAlgorithms.Audio;
 
 public class SoundBoard
 {
-    public List<AudioDevice> outputAudioDevices { get; private set; } = [];
+    // public List<AudioDevice> outputAudioDevices { get; private set; } = [];
 
-    public Dictionary<string, AudioClip> audioClipCache { get; private set; } = [];
-    public Dictionary<string, AudioPlayer> audioPlayerDic { get; private set; } = [];
+    // public Dictionary<string, AudioClip> audioClipCache { get; private set; } = [];
+    // public Dictionary<string, AudioPlayer> audioPlayerDic { get; private set; } = [];
+    public DirectoryInfo RootDirectory { get; private set; }
+
+    public Dictionary<string, SoundPlayer> soundPlayerDic = [];
 
 #if USE_AVALONIA_UI
     public WrapPanel soundBoardPanel { get; private set; }
-    public DirectoryInfo RootDirectory { get; private set; }
+#endif
+
+#if USE_SOUND_FLOW
+    public Dictionary<string, AudioPlaybackDevice> playbackDeviceDic { get; private set; }
+    public MiniAudioEngine SoundFlowAudioEngine { get; private set; }
 #endif
 
     public const string CALL_PATH = "[CSharpAlgorithms.Audio.SoundBoard]";
 
+    public SoundBoard
+    (
+        DirectoryInfo rootDirectory
+
 #if USE_AVALONIA_UI
-    public SoundBoard(WrapPanel soundBoardPanel, DirectoryInfo rootDirectory)
+        , WrapPanel soundBoardPanel
+#endif
+#if USE_SOUND_FLOW
+        , Dictionary<string, AudioPlaybackDevice> playbackDeviceDic, MiniAudioEngine soundFlowAudioEngine
+#endif
+    )
     {
-        this.soundBoardPanel = soundBoardPanel;
         this.RootDirectory = rootDirectory;
+
+#if USE_AVALONIA_UI
+        this.soundBoardPanel = soundBoardPanel;
+#endif
+#if USE_SOUND_FLOW
+        this.playbackDeviceDic = playbackDeviceDic;
+        this.SoundFlowAudioEngine = soundFlowAudioEngine;
+#endif
 
         LoadAudioFromDirectory(rootDirectory);
     }
-#endif
 
     public async Task<bool> LoadAudioFromDirectory(DirectoryInfo directoryInfo)
     {
@@ -96,7 +124,7 @@ public class SoundBoard
         return false;
     }
 
-
+#if USE_AVALONIA_UI
     private void PlaySound(object sender, RoutedEventArgs e)
     {
         if (sender is Button playButton)
@@ -105,39 +133,74 @@ public class SoundBoard
             PlaySound(soundName);
         }
     }
+#endif
+
     public async Task<bool> PlaySound(string soundId)
     {
         Console.WriteLine($"playing {soundId}");
 
-        foreach (AudioDevice device in outputAudioDevices)
+#if USE_SOUND_FLOW
+        PlaySoundOnSoundFlowDevices(soundId);
+#endif
+
+        // foreach (AudioDevice device in outputAudioDevices)
+        // {
+        //     string clipId = GetSoundId(soundId, device);
+        //     if (!audioClipCache.TryGetValue(clipId, out AudioClip clip))
+        //     {
+        //         string filePath = Path.Combine("Audio Clips", soundId);
+        //         if (!File.Exists(filePath))
+        //         {
+        //             Console.WriteLine($"Audio file not found: {filePath}");
+        //             continue;
+        //         }
+
+        //         clip = await AudioClip.FromMP3File(filePath, device.Info.defaultSampleRate, (short)device.OutputChannelCount);
+        //         audioClipCache[clipId] = clip;
+        //     }
+
+        //     string playerId = GetPlayerId(clipId, device);
+        //     if (!audioPlayerDic.TryGetValue(playerId, out AudioPlayer player))
+        //     {
+        //         player = new AudioPlayer(clip);
+        //         audioPlayerDic[playerId] = player;
+        //         device.audioPlayers.Add(player);
+        //     }
+
+        //     player.Play();
+        // }
+
+        return true;
+    }
+
+#if USE_SOUND_FLOW
+    public bool PlaySoundOnSoundFlowDevices(string soundId)
+    {
+        string filePath = GetSoundFilePath(soundId);
+
+        foreach (AudioPlaybackDevice device in playbackDeviceDic.Values)
         {
-            string clipId = GetSoundId(soundId, device);
-            if (!audioClipCache.TryGetValue(clipId, out AudioClip clip))
+            string playerId = GetPlayerId(soundId, device);
+            if (soundPlayerDic.TryGetValue(soundId, out SoundPlayer player) == false)
             {
-                string filePath = Path.Combine("Audio Clips", soundId);
-                if (!File.Exists(filePath))
-                {
-                    Console.WriteLine($"Audio file not found: {filePath}");
-                    continue;
-                }
+                FileStream audioStream = File.OpenRead(filePath);
+                StreamDataProvider dataProvider = new StreamDataProvider(SoundFlowAudioEngine, audioStream);
 
-                clip = await AudioClip.FromMP3File(filePath, device.Info.defaultSampleRate, (short)device.OutputChannelCount);
-                audioClipCache[clipId] = clip;
-            }
+                player = new SoundPlayer(SoundFlowAudioEngine, AudioFormat.DvdHq, dataProvider);
+                soundPlayerDic[playerId] = player;
 
-            string playerId = GetPlayerId(clipId, device);
-            if (!audioPlayerDic.TryGetValue(playerId, out AudioPlayer player))
-            {
-                player = new AudioPlayer(clip);
-                audioPlayerDic[playerId] = player;
-                device.audioPlayers.Add(player);
+                device.MasterMixer.AddComponent(player);
             }
 
             player.Play();
+            Debug.WriteLine(7);
         }
 
         return true;
     }
+#endif
+
+    public string GetSoundFilePath(string soundId) => Path.Combine(RootDirectory.FullName, soundId);
 
     public static string GetSoundName(FileInfo fileInfo) => GetSoundName(fileInfo.FullName);
     public static string GetSoundName(string filePath) => Path.GetFileName(filePath);
@@ -146,7 +209,7 @@ public class SoundBoard
     public static string GetSoundId(string soundName, AudioDevice device) => GetSoundId(soundName, (int)device.Info.defaultSampleRate);
 
     public static string GetPlayerId(string soundId, string deviceName) => $"{soundId}:{deviceName}";
-    public static string GetPlayerId(string soundId, AudioDevice device) => $"{soundId}:{device.Info.name}";
+    public static string GetPlayerId(string soundId, AudioPlaybackDevice device) => $"{soundId}:{device.Info?.Name}";
 
     public static (DirectoryInfo[] subDirs, FileInfo[] audioFiles) GetDirectoryContent(DirectoryInfo directoryInfo)
     {
