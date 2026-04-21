@@ -62,7 +62,7 @@ public class HTTPServer
             else
             {
                 await Responses.HandleNotFound(request, response);
-                Debug.WriteErrorLine("No handler for path: " + path);
+                CSDebug.WriteErrorLine("No handler for path: " + path);
             }
         }
     }
@@ -78,7 +78,7 @@ public class HTTPServer
 
         if (!File.Exists(filePath))
         {
-            Debug.WriteErrorLine($"{CALL_PATH} File {filePath} does not exist.");
+            CSDebug.WriteErrorLine($"{CALL_PATH} File {filePath} does not exist.");
             return;
         }
         

@@ -1,4 +1,4 @@
-#define DEBUG
+#define CSDebug
 
 using System;
 using System.Linq;
@@ -45,9 +45,9 @@ public readonly struct AudioDeviceData
         string json = System.Text.Json.JsonSerializer.Serialize(deviceDatas, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
         System.IO.File.WriteAllText(filePath, json);
 
-#if DEBUG
-        Debug.WriteLine($"Saved to {filePath}");
-        Debug.WriteLine(json);
+#if CSDebug
+        CSDebug.WriteLine($"Saved to {filePath}");
+        CSDebug.WriteLine(json);
 #endif
     }
 

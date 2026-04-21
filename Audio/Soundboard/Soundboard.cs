@@ -64,19 +64,25 @@ public class SoundBoard
         this.SoundFlowAudioEngine = soundFlowAudioEngine;
 #endif
 
-        LoadAudioFromDirectory(rootDirectory);
+        LoadAudioFromDirectory(rootDirectory).GetAwaiter().GetResult();
     }
 
     public async Task<bool> LoadAudioFromDirectory(DirectoryInfo directoryInfo)
     {
         const string FUNC_CALL_PATH = $"[{CALL_PATH}.LoadAudioFromDirectory(DirectoryInfo directoryInfo)]";
+        if (directoryInfo is null)
+        {
+            Console.WriteLine($"{FUNC_CALL_PATH} - DirectoryInfo is null.");
+            return false;
+        }
+
         if (!directoryInfo.Exists)
         {
             Console.WriteLine($"{FUNC_CALL_PATH} - Directory does not exist: {directoryInfo.FullName}");
             return false;
         }
 
-        Debug.WriteSuccess($"{FUNC_CALL_PATH} - Loading audio from directory: {directoryInfo.FullName}");
+        CSDebug.WriteSuccess($"{FUNC_CALL_PATH} - Loading audio from directory: {directoryInfo.FullName}");
 
         (DirectoryInfo[] subDirs, FileInfo[] audioFiles) = GetDirectoryContent(directoryInfo);
 
@@ -96,7 +102,7 @@ public class SoundBoard
             parentDirectoryButton.Click += async (sender, e) =>
             {
                 DirectoryInfo parentDir = directoryInfo.Parent;
-                if (parentDir != null)
+                if (parentDir is not null)
                     await LoadAudioFromDirectory(parentDir);
             };
 
@@ -193,7 +199,7 @@ public class SoundBoard
             }
 
             player.Play();
-            Debug.WriteLine(7);
+            CSDebug.WriteLine(7);
         }
 
         return true;

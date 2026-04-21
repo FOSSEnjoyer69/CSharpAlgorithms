@@ -42,12 +42,12 @@ public class SoundboardWebuiServer
 
         if (string.IsNullOrEmpty(audioPath))
         {
-            Responses.SendTextRespone(res, "Error: No audio path provided.");
+            await Responses.SendTextRespone(res, "Error: No audio path provided.");
             return;
         }
 
         Console.WriteLine(soundBoard.PlaySound(audioPath));
-        Responses.SendTextRespone(res, $"Playing audio: {audioPath}");
+        await Responses.SendTextRespone(res, $"Playing audio: {audioPath}");
     }
 
     private async Task HandlePageLoad(HttpListenerRequest req, HttpListenerResponse res)
@@ -56,7 +56,7 @@ public class SoundboardWebuiServer
         DirectoryInfo directoryInfo = new(directoryPath);
         string responseString = BuildHtml(directoryInfo);
 
-        Responses.SendTextRespone(res, responseString);
+        await Responses.SendTextRespone(res, responseString);
     }
 
     private string BuildHtml(DirectoryInfo directory)

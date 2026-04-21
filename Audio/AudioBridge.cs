@@ -21,7 +21,7 @@ public sealed class AudioBridge
 
         Name = GetName(source, destination);
 
-        Debug.WriteSuccess($"Created audio bridge from '{source.Info?.Name}' to '{destination.Info?.Name}'");
+        CSDebug.WriteSuccess($"Created audio bridge from '{source.Info?.Name}' to '{destination.Info?.Name}'");
 
         microphoneDataProvider = new MicrophoneDataProvider(source);
         soundPlayer = new SoundPlayer(audioEngine, AudioFormat.DvdHq, microphoneDataProvider);

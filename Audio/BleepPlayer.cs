@@ -53,12 +53,12 @@ public class BleepPlayer : IAudioProvider, IIsPlaying, IPlay, IPause
     {
         const string CALL_PATH = "[CSharpAlgorithms.Audio.BleepPlayer.Play]";
         IsPlaying = true;
-        Debug.WriteLine($"{CALL_PATH} playing");
+        CSDebug.WriteLine($"{CALL_PATH} playing");
     }
     public void Pause()
     {
         const string CALL_PATH = "[CSharpAlgorithms.Audio.BleepPlayer.Pause]";
         IsPlaying = false;
-        Debug.WriteLine($"{CALL_PATH} paused");
+        CSDebug.WriteLine($"{CALL_PATH} paused");
     }
 }

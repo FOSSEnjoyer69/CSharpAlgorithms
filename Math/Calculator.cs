@@ -28,6 +28,13 @@ public static class Calculator
             values[i] = ClampInclusive(values[i], min, max);
     }
 
+    public static T Min<T>(T a, T b) where T : IComparisonOperators<T, T, bool>
+    {
+        if (a < b)
+            return a;
+        else
+            return b;
+    }
     public static T Min<T>(params T[] comparables) where T : IComparisonOperators<T, T, bool>
     {
         T min = comparables[0];

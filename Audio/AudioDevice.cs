@@ -1,10 +1,7 @@
 #define USE_SOUND_FLOW
 
 using PortAudioSharp;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
 using AudioStream = PortAudioSharp.Stream;
 using CSharpAlgorithms.Collection;
@@ -50,7 +47,7 @@ public sealed class AudioDevice : IMute, IDisposable
     {
         if (!AudioUtils.GetDeviceIndex(deviceName, out int deviceIndex))
         {
-            Debug.WriteErrorLine($"[AudioDevice.SetDevice] No audio device found with name {deviceName}");
+            CSDebug.WriteErrorLine($"[AudioDevice.SetDevice] No audio device found with name {deviceName}");
             return false;
         }
 
@@ -62,7 +59,7 @@ public sealed class AudioDevice : IMute, IDisposable
 
         if (deviceIndex == PortAudio.NoDevice)
         {
-            Debug.WriteErrorLine($"{CALL_PATH} No audio device found at index {deviceIndex}");
+            CSDebug.WriteErrorLine($"{CALL_PATH} No audio device found at index {deviceIndex}");
             return false;
         }
 
@@ -74,7 +71,7 @@ public sealed class AudioDevice : IMute, IDisposable
             DeviceInfo previousInfo = Info;
 
             Info = PortAudio.GetDeviceInfo(deviceIndex);
-            Debug.PrintObject(Info);
+            CSDebug.PrintObject(Info);
 
             InputChannelCount = Calculator.Min(1, Info.maxInputChannels);
             OutputChannelCount = Calculator.Min(2, Info.maxOutputChannels);
@@ -144,13 +141,13 @@ public sealed class AudioDevice : IMute, IDisposable
                 }
             }
 
-            Debug.WriteSuccess($"{CALL_PATH} Set audio device to {Info.name} at index {deviceIndex}");
+            CSDebug.WriteSuccess($"{CALL_PATH} Set audio device to {Info.name} at index {deviceIndex}");
             return true;
         }
         catch (System.Exception ex)
         {
-            Debug.WriteErrorLine($"{CALL_PATH} Failed to set audio device to index '{deviceIndex}' with name '{Info.name}'");
-            Debug.Print(ex);
+            CSDebug.WriteErrorLine($"{CALL_PATH} Failed to set audio device to index '{deviceIndex}' with name '{Info.name}'");
+            CSDebug.Print(ex);
             return false;
         }
     }
@@ -159,7 +156,7 @@ public sealed class AudioDevice : IMute, IDisposable
     {
         if (volume < 0 || volume > 10)
         {
-            Debug.WriteErrorLine($"[AudioDevice.SetInputVolume] Volume must be between 0 and 10. Given: {volume}");
+            CSDebug.WriteErrorLine($"[AudioDevice.SetInputVolume] Volume must be between 0 and 10. Given: {volume}");
             return false;
         }
 
@@ -171,7 +168,7 @@ public sealed class AudioDevice : IMute, IDisposable
     {
         if (volume < 0 || volume > 10)
         {
-            Debug.WriteErrorLine($"[AudioDevice.SetOutputVolume] Volume must be between 0 and 10. Given: {volume}");
+            CSDebug.WriteErrorLine($"[AudioDevice.SetOutputVolume] Volume must be between 0 and 10. Given: {volume}");
             return false;
         }
 
@@ -243,7 +240,7 @@ public sealed class AudioDevice : IMute, IDisposable
 
                 }
                 else
-                    Debug.WriteWarning($"{CALL_PATH} {bufferDicItem.Key} Output buffer for device {Info.name} is empty");
+                    CSDebug.WriteWarning($"{CALL_PATH} {bufferDicItem.Key} Output buffer for device {Info.name} is empty");
             }
 
             if (inputMonitorBuffer is not null && MonitorOwnInput && !IsOutputMuted)
@@ -351,11 +348,11 @@ public sealed class AudioDevice : IMute, IDisposable
         {
 #if true
             if (source is null && destination is null)
-                Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Both source and destination devices are null");
+                CSDebug.WriteErrorLine("[AudioDevice.ConnectDevices] Both source and destination devices are null");
             else if (source is null)
-                Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Source device is null");
+                CSDebug.WriteErrorLine("[AudioDevice.ConnectDevices] Source device is null");
             else
-                Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Destination device is null");
+                CSDebug.WriteErrorLine("[AudioDevice.ConnectDevices] Destination device is null");
 #endif
 
             return false;
@@ -364,7 +361,7 @@ public sealed class AudioDevice : IMute, IDisposable
         if (source == destination)
         {
 #if true
-            Debug.WriteErrorLine("[AudioDevice.ConnectDevices] Source and destination devices are the same");
+            CSDebug.WriteErrorLine("[AudioDevice.ConnectDevices] Source and destination devices are the same");
 #endif
             return false;
         }
@@ -373,7 +370,7 @@ public sealed class AudioDevice : IMute, IDisposable
         source.inputBuffers[destination.Info.name] = buffer;
         destination.outputBuffers[source.Info.name] = buffer;
 
-        Debug.WriteSuccess($"[AudioDevice.ConnectDevices] Created a connection between source device '{source.Info.name}' and destination device '{destination.Info.name}'");
+        CSDebug.WriteSuccess($"[AudioDevice.ConnectDevices] Created a connection between source device '{source.Info.name}' and destination device '{destination.Info.name}'");
 
         return true;
     }

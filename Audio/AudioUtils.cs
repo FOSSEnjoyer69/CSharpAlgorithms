@@ -1,4 +1,4 @@
-//#define DEBUG
+//#define CSDebug
 
 using System;
 using System.Linq;
@@ -38,7 +38,7 @@ public static class AudioUtils
         }
         catch (Exception ex)
         {
-            Debug.WriteErrorLine($"Error initializing Audio: {ex.Message}");
+            CSDebug.WriteErrorLine($"Error initializing Audio: {ex.Message}");
             IsInitialized = false;
             return false;
         }

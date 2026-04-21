@@ -74,7 +74,9 @@ public struct Vector2<T> : INumber<Vector2<T>>, IByteSize
 
     public static Vector2<T> Abs(Vector2<T> value)
     {
-        throw new NotImplementedException();
+        T x = T.Abs(value.X);
+        T y = T.Abs(value.Y);
+        return new Vector2<T>(x, y);
     }
 
     public static bool IsCanonical(Vector2<T> value)

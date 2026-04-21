@@ -1,9 +1,6 @@
-using System;
-using System.Collections.Generic;
-
 namespace CSharpAlgorithms;
 
-public static class Debug
+public static class CSDebug
 {
     public static void PrintArray<T>(T[] array)
     {
