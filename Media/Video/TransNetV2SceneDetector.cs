@@ -190,17 +190,28 @@ public sealed class TransNetV2SceneDetector : IDisposable
         psi.ArgumentList.Add("-hide_banner");
         psi.ArgumentList.Add("-loglevel");
         psi.ArgumentList.Add("error");
+        psi.ArgumentList.Add("-nostdin");
+
+        // Auto thread count.
+        psi.ArgumentList.Add("-threads");
+        psi.ArgumentList.Add("0");
+
         psi.ArgumentList.Add("-i");
         psi.ArgumentList.Add(videoPath);
 
+        // Only decode first video stream.
         psi.ArgumentList.Add("-map");
         psi.ArgumentList.Add("0:v:0");
 
-        psi.ArgumentList.Add("-vf");
-        psi.ArgumentList.Add($"scale={Width}:{Height}");
+        // Ignore audio/subtitles/data.
+        psi.ArgumentList.Add("-an");
+        psi.ArgumentList.Add("-sn");
+        psi.ArgumentList.Add("-dn");
 
-        psi.ArgumentList.Add("-pix_fmt");
-        psi.ArgumentList.Add("rgb24");
+        // Scale + RGB conversion in one filter chain.
+        // fast_bilinear is usually fine for ML preprocessing.
+        psi.ArgumentList.Add("-vf");
+        psi.ArgumentList.Add($"scale={Width}:{Height}:flags=fast_bilinear,format=rgb24");
 
         psi.ArgumentList.Add("-f");
         psi.ArgumentList.Add("rawvideo");
@@ -209,43 +220,60 @@ public sealed class TransNetV2SceneDetector : IDisposable
         using Process process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start ffmpeg.");
 
+        // Drain stderr while stdout is being read.
+        Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
         List<byte[]> frames = new();
-        byte[] buffer = new byte[FrameBytes];
+        Stream stdout = process.StandardOutput.BaseStream;
 
         while (true)
         {
-            int read = 0;
+            byte[] frame = new byte[FrameBytes];
 
-            while (read < FrameBytes)
-            {
-                int n = await process.StandardOutput.BaseStream.ReadAsync(
-                    buffer.AsMemory(read, FrameBytes - read),
-                    cancellationToken);
-
-                if (n == 0)
-                    break;
-
-                read += n;
-            }
+            int read = await ReadFullOrEndAsync(
+                stdout,
+                frame,
+                cancellationToken);
 
             if (read == 0)
                 break;
 
             if (read != FrameBytes)
-                throw new InvalidOperationException("Partial frame read from ffmpeg.");
+                throw new InvalidOperationException(
+                    $"Partial frame read from ffmpeg. Got {read} of {FrameBytes} bytes.");
 
-            byte[] frame = new byte[FrameBytes];
-            Buffer.BlockCopy(buffer, 0, frame, 0, FrameBytes);
             frames.Add(frame);
         }
 
-        string error = await process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);
+        string error = await errorTask;
 
         if (process.ExitCode != 0)
             throw new InvalidOperationException($"ffmpeg failed: {error}");
 
         return frames;
+    }
+
+    private static async Task<int> ReadFullOrEndAsync(
+        Stream stream,
+        byte[] buffer,
+        CancellationToken cancellationToken)
+    {
+        int totalRead = 0;
+
+        while (totalRead < buffer.Length)
+        {
+            int n = await stream.ReadAsync(
+                buffer.AsMemory(totalRead, buffer.Length - totalRead),
+                cancellationToken);
+
+            if (n == 0)
+                break;
+
+            totalRead += n;
+        }
+
+        return totalRead;
     }
 
     private static async Task<double> GetVideoFpsAsync(string videoPath, CancellationToken cancellationToken)
