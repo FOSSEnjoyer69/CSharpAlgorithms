@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using BCnEncoder.Encoder;
 using BCnEncoder.Shared;
 using CSharpAlgorithms.Math;
@@ -7,12 +5,6 @@ using BCnEncoder.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
 using SixLaborsImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
-using TelltaleTextureTool.Main;
-using Hexa.NET.DirectXTex;
-using TelltaleTextureTool.DirectX;
-using TelltaleTextureTool.TelltaleEnums;
-using TelltaleTextureTool;
-using TelltaleTextureTool.Telltale.FileTypes.D3DTX;
 
 namespace CSharpAlgorithms.Media.Images;
 
@@ -87,53 +79,6 @@ public sealed class Image
             _ => throw new NotSupportedException($"Unsupported DDS decoded format: {pfim.Format}")
         };
     }
-
-    //The general idea is right but some modifcations need to be made for this to be ready
-    //public void SaveD3DTX(string filePath, string jsonFilePath, ImageAdvancedOptions options)
-    //{
-    //    if (string.IsNullOrEmpty(filePath))
-    //    {
-    //        Console.WriteLine($"Cannot save image to {filePath}");
-    //    }
-//
-    //    if (string.IsNullOrEmpty(jsonFilePath))
-    //    {
-    //        Console.WriteLine($"Cannot read .json from {jsonFilePath}");
-    //    }
-//
-    //    D3DTX_Master d3dtx = new();
-    //    d3dtx.ReadD3DTXJSON(jsonFilePath);
-//
-    //    DDSFlags flags = d3dtx.IsLegacyD3DTX() ? DDSFlags.ForceDx9Legacy : DDSFlags.None;
-    //    Texture texture = new(filePath, TelltaleTextureTool.Graphics.TextureType.DDS, flags);
-//
-    //    // Set the options for the converter
-    //    if (d3dtx.d3dtxMetadata.TextureType is T3TextureType.eTxBumpmap or
-    //                    T3TextureType.eTxNormalMap)
-    //    {
-    //        options.IsTelltaleNormalMap = true;
-    //    }
-    //    else if (d3dtx.d3dtxMetadata.TextureType is T3TextureType.eTxNormalXYMap)
-    //    {
-    //        options.IsTelltaleNormalMap = true;
-    //    }
-//
-    //    if (d3dtx.d3dtxMetadata.SurfaceGamma is T3SurfaceGamma.sRGB)
-    //    {
-    //        options.IsSRGB = true;
-    //    }
-//
-    //    texture.TransformTexture(options, true, true);
-    //    texture.GetDDSInformation(out D3DTXMetadata metadata, out ImageSection[] sections, flags);
-//
-    //    if (options.EnableSwizzle)
-    //        metadata.Platform = options.PlatformType;
-//
-    //    d3dtx.ModifyD3DTX(metadata, sections);
-    //    texture.Release();
-//
-    //    d3dtx.WriteFinalD3DTX(filePath);
-    //}
 
     #region  Operators
     public static implicit operator Image(SixLaborsImage inputImage)

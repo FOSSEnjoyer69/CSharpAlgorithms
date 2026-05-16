@@ -101,49 +101,6 @@ public sealed class ImageEditor(SixLaborsImage image)
 
             }
         }
-
-        //{
-        //    Image.ProcessPixelRows(accessor =>
-        //    for (int y = 0; y < accessor.Height; y++)
-        //    {
-        //        Span<Rgba32> row = accessor.GetRowSpan(y);
-        //        for (int x = 0; x < row.Length; x++)
-        //        {
-//
-        //            Rgba32 src = row[x];
-        //            float maskFactor = 1f;
-        //            if (mask is not null)
-//
-        //                maskFactor = SrgbLuma01(mask[x, y]); // white=apply, black=skip
-        //            float t = opacity * maskFactor;
-        //            if (t <= 0f) continue;
-//
-//
-        //            // Work in 0..1
-        //            float sr = src.R / 255f;
-//
-        //            float sg = src.G / 255f;
-        //            float sb = src.B / 255f;
-        //            // Keep source shading
-        //            HSLColour srcHsl = ColourConverter.RGB_To_HSL(sr, sg, sb);
-//
-        //            float outL = ApplyLightnessShift(srcHsl.Luminance, lightnessShift);
-        //            // Replace hue/sat
-        //            var outHsl = new HSLColour(targetHue, targetSat, outL);
-//
-        //            // Convert back to RGB (0..1 floats in your Colour struct)
-        //            Colour outRgb = ColourConverter.HSL_To_RGB(outHsl);
-//
-//
-        //            // Blend in 0..1, then convert to bytes
-        //            float fr = Lerp(sr, outRgb.r, t);
-        //            float fg = Lerp(sg, outRgb.g, t);
-        //            float fb = Lerp(sb, outRgb.b, t);
-//
-        //            row[x] = new Rgba32(ToByte(fr), ToByte(fg), ToByte(fb), src.A);
-        //        }
-        //    }
-        //});
     }
 
     private static byte ToByte(float v)
