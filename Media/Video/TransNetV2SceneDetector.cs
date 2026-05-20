@@ -83,7 +83,6 @@ public sealed class TransNetV2SceneDetector : IDisposable
 
 
             float[] predictions = RunPrediction(frames);
-            CSDebug.PrintArray(predictions);
 
             for (int i = 0; i < predictions.Length; i++)
             {
