@@ -4,7 +4,7 @@ using System.Globalization;
 namespace CSharpAlgorithms.Media.Video;
 public static class VideoClipper
 {
-    public static async Task ExtractClipByFrameRangeAsync(string inputVideo, string outputVideo, int startFrame, int endFrame, double fps, bool reencode = true)
+    public static async Task ExtractClipByFrameRangeAsync(string inputVideo, string outputVideo, int startFrame, int endFrame, double? fps = null, bool reencode = true)
     {
         if (startFrame < 0)
             throw new ArgumentOutOfRangeException(nameof(startFrame));
@@ -12,12 +12,14 @@ public static class VideoClipper
         if (endFrame < startFrame)
             throw new ArgumentException("End frame must be >= start frame.");
 
-        double startTime = startFrame / fps;
+        fps ??= await FFMPegInterface.GetFPS(inputVideo);
+
+        double startTime = startFrame / fps.Value;
 
         Directory.CreateDirectory(Path.GetDirectoryName(outputVideo) ?? ".");
 
         // +1 because endFrame is inclusive
-        double duration = ((endFrame - startFrame) + 1) / fps;
+        double duration = ((endFrame - startFrame) + 1) / fps.Value;
 
         string start = startTime.ToString("0.########", CultureInfo.InvariantCulture);
         string dur = duration.ToString("0.########", CultureInfo.InvariantCulture);

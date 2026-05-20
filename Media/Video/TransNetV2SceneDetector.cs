@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Globalization;
+using CommunityToolkit.HighPerformance;
 using CSharpAlgorithms.Math;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
@@ -18,10 +18,11 @@ public sealed class TransNetV2SceneDetector : IDisposable
     private const int CenterLength = 50;
 
     private readonly InferenceSession session;
-    private readonly string inputName;
-    private readonly string outputName;
+    private readonly string _inputName;
+    private readonly string _outputName;
 
-    public TransNetV2SceneDetector(string onnxModelPath, bool useCuda = false, int cudaDeviceId = 0, string? outputName = null)
+
+    public TransNetV2SceneDetector(string onnxModelPath, bool useCuda = false, int cudaDeviceId = 0)
     {
         if (!File.Exists(onnxModelPath))
             throw new FileNotFoundException("TransNetV2 ONNX model not found.", onnxModelPath);
@@ -33,299 +34,212 @@ public sealed class TransNetV2SceneDetector : IDisposable
         options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
 
         session = new InferenceSession(onnxModelPath, options);
-
-        inputName = session.InputMetadata.Keys.First();
-        this.outputName = outputName ?? session.OutputMetadata.Keys.First();
+        _inputName = session.InputMetadata.Keys.First();
+        _outputName = session.OutputMetadata.Keys.First();
     }
 
     public async Task<Range<int>[]> DetectScenesAsync(string videoPath, float threshold = 0.5f, CancellationToken cancellationToken = default)
     {
-        const string CALL_PATH = "CSharpAlgorithms.Media.Video.DetectScenesAsync";
-
         if (!File.Exists(videoPath))
-            throw new FileNotFoundException("Video not found.", videoPath);
+            throw new FileNotFoundException("Video file not found.", videoPath);
 
-        CSDebug.WriteLine($"[{CALL_PATH}] Starting scene detection for video: {videoPath}");
+        List<byte[]> frames = [];
+        VideoReader.OpenRead(videoPath, out VideoReader reader, frameSize: new Vector2<int>(Width, Height), channelCount: Channels);
 
-        double fps = await GetVideoFpsAsync(videoPath, cancellationToken);
-
-        List<byte[]> frames = await DecodeFramesAsync(videoPath, cancellationToken);
+        foreach (byte[] frame in reader.DecodeFramesStream(videoPath))
+        {
+            frames.Add(frame);
+        }
 
         if (frames.Count == 0)
             throw new InvalidOperationException("No frames decoded from video.");
 
         float[] predictions = RunPrediction(frames);
 
-        return PredictionsToScenes(predictions, fps, threshold);
+        return PredictionsToScenes(predictions, threshold);
     }
 
-    private float[] RunPrediction(List<byte[]> frames)
+    public async IAsyncEnumerable<Range<int>[]> DetectScenesStream(string videoPath, float threshold = 0.5f, CancellationToken cancellationToken = default)
     {
-        List<float> predictions = new(frames.Count);
+        if (!File.Exists(videoPath))
+            throw new FileNotFoundException("Video file not found.", videoPath);
+
+        VideoReader.OpenRead(videoPath, out VideoReader reader, frameSize: new Vector2<int>(Width, Height), channelCount: Channels);
+
+        int framesRead = 0;
+        int currentSceneStartIndex = 0;
+
+        List<byte[]> frames = [];
+        foreach (byte[] frame in reader.DecodeFramesStream(videoPath))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            framesRead++;
+            frames.Add(frame);
+
+            if (frames.Count % WindowFrames != 0)
+                continue;
+                
+
+
+            float[] predictions = RunPrediction(frames);
+            CSDebug.PrintArray(predictions);
+
+            for (int i = 0; i < predictions.Length; i++)
+            {
+                if (predictions[i] < threshold)
+                    continue;
+
+                int sceneEndPosition = currentSceneStartIndex + i;
+
+                CSDebug.WriteLine($"{currentSceneStartIndex} - {sceneEndPosition}");
+
+                Range<int> scene = new Range<int>(currentSceneStartIndex, sceneEndPosition);
+                yield return new[] { scene };
+
+                currentSceneStartIndex = sceneEndPosition;
+                frames.Clear();
+            }
+
+            if (framesRead % 1 == 0)
+                CSDebug.WriteLine($"\r Frames read: {framesRead}");
+        }
+    }
+
+
+    private float[] RunPrediction(IReadOnlyList<byte[]> frames)
+    {
+        List<float> allPredictions = new();
 
         int frameCount = frames.Count;
 
-        int remainder = frameCount % CenterLength;
-        int endPad = CenterStart + CenterLength - (remainder == 0 ? CenterLength : remainder);
-
-        int paddedLength = CenterStart + frameCount + endPad;
-
-        for (int windowStart = 0; windowStart + WindowFrames <= paddedLength; windowStart += CenterLength)
+        for (int outputStart = 0; outputStart < frameCount; outputStart += CenterLength)
         {
-            DenseTensor<float> input = new(new[] { 1, WindowFrames, Height, Width, Channels });
-            Span<float> inputSpan = input.Buffer.Span;
+            byte[][] window = BuildWindow(frames, outputStart);
 
-            for (int localFrame = 0; localFrame < WindowFrames; localFrame++)
+            float[] windowPredictions = RunWindow(window);
+
+            int remaining = frameCount - outputStart;
+            int take = Calculator.Min(CenterLength, remaining);
+
+            allPredictions.AddRange(windowPredictions.Take(take));
+        }
+
+        return allPredictions.ToArray();
+    }
+
+    private static byte[][] BuildWindow(IReadOnlyList<byte[]> frames, int outputStart)
+    {
+        byte[][] window = new byte[WindowFrames][];
+
+        // The model window starts 25 frames before the output section.
+        int sourceStart = outputStart - CenterStart;
+
+        for (int i = 0; i < WindowFrames; i++)
+        {
+            int sourceIndex = sourceStart + i;
+
+            if (sourceIndex < 0)
+                sourceIndex = 0;
+
+            if (sourceIndex >= frames.Count)
+                sourceIndex = frames.Count - 1;
+
+            window[i] = frames[sourceIndex];
+        }
+
+        return window;
+    }
+
+    private float[] RunWindow(byte[][] frames)
+    {
+        // Most TransNetV2 ONNX exports use:
+        // [batch, frames, height, width, channels]
+        var input = new DenseTensor<float>(
+            new[] { 1, WindowFrames, Height, Width, Channels });
+
+        for (int t = 0; t < WindowFrames; t++)
+        {
+            byte[] frame = frames[t];
+
+            int src = 0;
+
+            for (int y = 0; y < Height; y++)
             {
-                int paddedIndex = windowStart + localFrame;
-                int sourceFrameIndex = Calculator.ClampInclusive(paddedIndex - CenterStart, 0, frameCount - 1);
-
-                byte[] frame = frames[sourceFrameIndex];
-
-                int dstOffset = localFrame * FrameBytes;
-
-                for (int i = 0; i < FrameBytes; i++)
-                    inputSpan[dstOffset + i] = frame[i];
-            }
-
-            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results =
-                session.Run(new[]
+                for (int x = 0; x < Width; x++)
                 {
-                    NamedOnnxValue.CreateFromTensor(inputName, input)
-                });
+                    input[0, t, y, x, 0] = frame[src++];
+                    input[0, t, y, x, 1] = frame[src++];
+                    input[0, t, y, x, 2] = frame[src++];
+                }
+            }
+        }
 
-            DisposableNamedOnnxValue output = results.First(x => x.Name == outputName);
-            Tensor<float> outputTensor = output.AsTensor<float>();
+        var inputTensor = NamedOnnxValue.CreateFromTensor(_inputName, input);
+        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results =
+            session.Run(new[] { inputTensor });
 
-            float[] windowPredictions = ExtractFramePredictions(outputTensor, WindowFrames);
+        Tensor<float> output = results.First(x => x.Name == _outputName).AsTensor<float>();
 
-            for (int i = CenterStart; i < CenterStart + CenterLength; i++)
+        float[] raw = output.ToArray();
+
+        // Expected shape is usually [1, 100, 1] or [1, 100].
+        // We only keep frames 25..74, same as the original TransNetV2 code.
+        float[] center = new float[CenterLength];
+
+        for (int i = 0; i < CenterLength; i++)
+        {
+            float value = raw[CenterStart + i];
+
+            // Some ONNX exports output logits instead of probabilities.
+            // If it looks outside 0..1, apply sigmoid.
+            if (value < 0f || value > 1f)
+                value = Calculator.Sigmoid(value);
+
+            center[i] = value;
+        }
+
+        return center;
+    }
+
+    private static Range<int>[] PredictionsToScenes(float[] predictions, float threshold, bool closeFinalScene = true)
+    {
+        List<Range<int>> scenes = new();
+
+        int start = 0;
+        int previous = 0;
+
+        for (int i = 0; i < predictions.Length; i++)
+        {
+            int current = predictions[i] > threshold ? 1 : 0;
+
+            // Transition ended.
+            if (previous == 1 && current == 0)
             {
-                if (predictions.Count >= frameCount)
-                    break;
-
-                predictions.Add(windowPredictions[i]);
+                start = i;
             }
 
-            Console.Write($"\rProcessed {Calculator.Min(predictions.Count, frameCount)}/{frameCount} frames");
-        }
-
-        Console.WriteLine();
-
-        return [.. predictions];
-    }
-
-    private static float[] ExtractFramePredictions(Tensor<float> tensor, int expectedFrames)
-    {
-        float[] raw = [.. tensor];
-
-        if (raw.Length < expectedFrames)
-            throw new InvalidOperationException(
-                $"Model output has {raw.Length} values, expected at least {expectedFrames}.");
-
-        int stride = raw.Length / expectedFrames;
-
-        float[] predictions = new float[expectedFrames];
-
-        for (int frame = 0; frame < expectedFrames; frame++)
-        {
-            float value = raw[frame * stride];
-
-            // Some exported ONNX models output logits, others already output probabilities.
-            // If outside 0..1, treat as logit and sigmoid it.
-            if (value < 0f || value > 1f)
-                value = Sigmoid(value);
-
-            predictions[frame] = value;
-        }
-
-        return predictions;
-    }
-
-    private static Range<int>[] PredictionsToScenes(float[] predictions, double fps, float threshold)
-    {
-        bool[] binary = [.. predictions.Select(x => x > threshold)];
-
-        List<(int Start, int End)> scenes = new();
-
-        bool previous = false;
-        int start = 0;
-
-        for (int i = 0; i < binary.Length; i++)
-        {
-            bool current = binary[i];
-
-            if (previous && !current)
-                start = i;
-
-            if (!previous && current && i != 0)
-                scenes.Add((start, i));
+            // Transition started.
+            if (previous == 0 && current == 1 && i != 0)
+            {
+                scenes.Add(new Range<int>(start, i));
+            }
 
             previous = current;
         }
 
-        if (!previous)
-            scenes.Add((start, binary.Length - 1));
-
-        if (scenes.Count == 0)
-            scenes.Add((0, binary.Length - 1));
-
-        return [.. scenes
-            .Where(s => s.End > s.Start)
-            .Select(s => new Range<int>(s.Start, s.End))];
-    }
-
-    private static async Task<List<byte[]>> DecodeFramesAsync(string videoPath, CancellationToken cancellationToken)
-    {
-        CSDebug.WriteLine($"Decoding video frames from: {videoPath}");
-        ProcessStartInfo psi = new()
+        // Always close the final real scene at the actual end of the video.
+        if (closeFinalScene && predictions.Length > 0)
         {
-            FileName = "ffmpeg",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
+            int finalFrame = predictions.Length - 1;
 
-        psi.ArgumentList.Add("-hide_banner");
-        psi.ArgumentList.Add("-loglevel");
-        psi.ArgumentList.Add("error");
-        psi.ArgumentList.Add("-nostdin");
-
-        // Auto thread count.
-        psi.ArgumentList.Add("-threads");
-        psi.ArgumentList.Add("0");
-
-        psi.ArgumentList.Add("-i");
-        psi.ArgumentList.Add(videoPath);
-
-        // Only decode first video stream.
-        psi.ArgumentList.Add("-map");
-        psi.ArgumentList.Add("0:v:0");
-
-        // Ignore audio/subtitles/data.
-        psi.ArgumentList.Add("-an");
-        psi.ArgumentList.Add("-sn");
-        psi.ArgumentList.Add("-dn");
-
-        // Scale + RGB conversion in one filter chain.
-        // fast_bilinear is usually fine for ML preprocessing.
-        psi.ArgumentList.Add("-vf");
-        psi.ArgumentList.Add($"scale={Width}:{Height}:flags=fast_bilinear,format=rgb24");
-
-        psi.ArgumentList.Add("-f");
-        psi.ArgumentList.Add("rawvideo");
-        psi.ArgumentList.Add("pipe:1");
-
-        using Process process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start ffmpeg.");
-
-        // Drain stderr while stdout is being read.
-        Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-        List<byte[]> frames = new();
-        Stream stdout = process.StandardOutput.BaseStream;
-
-        while (true)
-        {
-            byte[] frame = new byte[FrameBytes];
-
-            int read = await ReadFullOrEndAsync(
-                stdout,
-                frame,
-                cancellationToken);
-
-            if (read == 0)
-                break;
-
-            if (read != FrameBytes)
-                throw new InvalidOperationException(
-                    $"Partial frame read from ffmpeg. Got {read} of {FrameBytes} bytes.");
-
-            frames.Add(frame);
-        }
-
-        await process.WaitForExitAsync(cancellationToken);
-        string error = await errorTask;
-
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"ffmpeg failed: {error}");
-
-        return frames;
-    }
-
-    private static async Task<int> ReadFullOrEndAsync(
-        Stream stream,
-        byte[] buffer,
-        CancellationToken cancellationToken)
-    {
-        int totalRead = 0;
-
-        while (totalRead < buffer.Length)
-        {
-            int n = await stream.ReadAsync(
-                buffer.AsMemory(totalRead, buffer.Length - totalRead),
-                cancellationToken);
-
-            if (n == 0)
-                break;
-
-            totalRead += n;
-        }
-
-        return totalRead;
-    }
-
-    private static async Task<double> GetVideoFpsAsync(string videoPath, CancellationToken cancellationToken)
-    {
-        ProcessStartInfo psi = new()
-        {
-            FileName = "ffprobe",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        psi.ArgumentList.Add("-v");
-        psi.ArgumentList.Add("error");
-        psi.ArgumentList.Add("-select_streams");
-        psi.ArgumentList.Add("v:0");
-        psi.ArgumentList.Add("-show_entries");
-        psi.ArgumentList.Add("stream=avg_frame_rate");
-        psi.ArgumentList.Add("-of");
-        psi.ArgumentList.Add("default=noprint_wrappers=1:nokey=1");
-        psi.ArgumentList.Add(videoPath);
-
-        using Process process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start ffprobe.");
-
-        string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-
-        string fpsText = output.Trim();
-
-        if (fpsText.Contains('/'))
-        {
-            string[] parts = fpsText.Split('/');
-
-            if (double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double num) &&
-                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double den) &&
-                den != 0)
+            if (scenes.Count == 0 || scenes[^1].Max < finalFrame)
             {
-                return num / den;
+                scenes.Add(new Range<int>(start, finalFrame));
             }
         }
 
-        if (double.TryParse(fpsText, NumberStyles.Float, CultureInfo.InvariantCulture, out double fps))
-            return fps;
-
-        throw new InvalidOperationException($"Could not parse FPS: {fpsText}");
-    }
-
-    private static float Sigmoid(float x)
-    {
-        return 1f / (1f + MathF.Exp(-x));
+        return scenes.ToArray();
     }
 
     public void Dispose()

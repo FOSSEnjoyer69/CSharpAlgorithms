@@ -11,7 +11,7 @@ public static class Calculator
 {
     public static double RateToInterval(double rate) => 1 / rate;
 
-    public static T ClampInclusive<T>(T value) where T: INumber<T> => ClampInclusive(value, T.Zero, T.One);
+    public static T ClampInclusive<T>(T value) where T : INumber<T> => ClampInclusive(value, T.Zero, T.One);
     public static T ClampInclusive<T>(T value, T min, T max) where T : IComparable<T>
     {
         if (value.CompareTo(min) <= 0)
@@ -97,7 +97,7 @@ public static class Calculator
 
         return totals;
     }
-    
+
     public static void AddNoNew<T>(params T[][] values) where T : struct, IAdditionOperators<T, T, T>
     {
         long length = ArrayUtils.GetLongestLength(values);
@@ -215,7 +215,7 @@ public static class Calculator
         return result;
     }
 
-    public static (T, string) GetApprioateUnit<T>(T bytes) where T : INumber<T>, IComparisonOperators<T, T, bool>
+    public static (T, string) GetAppropriateUnit<T>(T bytes) where T : INumber<T>, IComparisonOperators<T, T, bool>
     {
         string[] units = { "B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
         T kilo = T.CreateChecked(1024);
@@ -228,5 +228,10 @@ public static class Calculator
         }
 
         return (bytes, units[unitIndex]);
+    }
+
+    public static float Sigmoid(float x)
+    {
+        return 1f / (1f + MathF.Exp(-x));
     }
 }

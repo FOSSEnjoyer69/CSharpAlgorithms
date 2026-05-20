@@ -1,4 +1,5 @@
 using System;
+using CSharpAlgorithms.Colour;
 using CSharpAlgorithms.Math;
 
 using SixLaborsImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
@@ -88,12 +89,12 @@ public sealed class ImageEditor(SixLaborsImage image)
                 var outHsl = new HSLColour(targetHue, targetSat, outL);
 
                 // Convert back to RGB (0..1 floats in your Colour struct)
-                Colour outRgb = ColourConverter.HSL_To_RGB(outHsl);
+                RGBAColour<float> outRgb = outHsl;
 
                 // Blend in 0..1, then convert to bytes
-                float fr = Lerp(sr, outRgb.r, t);
-                float fg = Lerp(sg, outRgb.g, t);
-                float fb = Lerp(sb, outRgb.b, t);
+                float fr = Lerp(sr, outRgb.R, t);
+                float fg = Lerp(sg, outRgb.G, t);
+                float fb = Lerp(sb, outRgb.B, t);
 
                 Image.SetPixel(x, y, new RGBAColour<byte>(ToByte(fr), ToByte(fg), ToByte(fb), pixel.A));
 

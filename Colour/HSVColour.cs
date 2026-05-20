@@ -1,4 +1,6 @@
-namespace CSharpAlgorithms.Math;
+using CSharpAlgorithms.Math;
+
+namespace CSharpAlgorithms.Colour;
 public struct HSVColour()
 {
     public float Hue, Saturation, Value;

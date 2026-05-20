@@ -3,6 +3,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO;
 using System.Threading.Tasks;
+using CSharpAlgorithms.Media;
 using MP3Sharp;
 
 namespace CSharpAlgorithms.Audio;

@@ -1,6 +1,6 @@
 using BCnEncoder.Encoder;
 using BCnEncoder.Shared;
-using CSharpAlgorithms.Math;
+using CSharpAlgorithms.Colour;
 using BCnEncoder.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
