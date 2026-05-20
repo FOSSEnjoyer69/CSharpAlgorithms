@@ -79,8 +79,6 @@ public sealed class TransNetV2SceneDetector : IDisposable
 
             if (frames.Count % WindowFrames != 0)
                 continue;
-                
-
 
             float[] predictions = RunPrediction(frames);
 
