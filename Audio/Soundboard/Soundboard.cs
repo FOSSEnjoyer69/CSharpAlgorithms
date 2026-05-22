@@ -199,7 +199,7 @@ public class SoundBoard
             }
 
             player.Play();
-            CSDebug.WriteLine(7);
+            
         }
 
         return true;
